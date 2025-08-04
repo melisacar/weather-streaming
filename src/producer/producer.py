@@ -2,9 +2,10 @@ from kafka import KafkaProducer
 import json
 import requests
 import time
+import os
 
 producer = KafkaProducer(
-    bootstrap_servers=('KAFKA_BROKERS', 'kafka:9092'), # Container DNS
+    bootstrap_servers=os.getenv('KAFKA_BROKERS', 'kafka:9092'), # Container DNS
     value_serializer=lambda v: json.dumps(v).encode('utf-8')
     )
 
