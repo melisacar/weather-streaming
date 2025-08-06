@@ -16,7 +16,7 @@ services:
       KAFKA_LOG_DIRS: "/var/lib/kafka/data"
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
       CLUSTER_ID: "S3gBDPSmSPWUi-ijFP5EwQ"
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"  # Tek node için 1 yapın
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
       KAFKA_DEFAULT_REPLICATION_FACTOR: "1"
@@ -68,6 +68,28 @@ services:
       KAFKA_CLUSTERS_0_NAME: local-kafka
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
 
+  prometheus:
+    image: prom/prometheus:v2.40.0
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+    depends_on:
+      - kafka
+
+  grafana:
+      image: grafana/grafana:9.5.0
+      ports:
+        - "3000:3000"
+      environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      volumes:
+        - grafana_data:/var/lib/grafana
+      depends_on:
+        - prometheus
+
 volumes:
   kafka_data:
   postgres_data:
+  grafana_data:
