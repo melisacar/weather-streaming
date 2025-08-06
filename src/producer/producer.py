@@ -3,6 +3,10 @@ import json
 import requests
 import time
 import os
+from prometheus_client import start_http_server, Counter
+
+start_http_server(8000)
+WEATHER_REQUESTS = Counter('weather_requests', 'API request count')
 
 producer = KafkaProducer(
     bootstrap_servers=os.getenv('KAFKA_BROKERS', 'kafka:9092'), # Container DNS
@@ -12,6 +16,7 @@ producer = KafkaProducer(
 topic = 'weather-data'
 
 def fetch_weather_data():
+    WEATHER_REQUESTS.inc()
     url = "https://api.weather.gov/gridpoints/LOX/150,48/forecast"
     headers = {"User-Agent": "myweatherapp.com"}
     response = requests.get(url, headers=headers)
