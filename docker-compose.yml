@@ -29,6 +29,8 @@ services:
       dockerfile: Dockerfile
     depends_on:
       - kafka
+    ports:
+      - "8000:8000"
     environment:
       KAFKA_BROKERS: "kafka:9092"
     restart: on-failure
@@ -39,6 +41,8 @@ services:
       dockerfile: Dockerfile.consumer
     depends_on:
       - kafka
+    ports:
+      - "8001:8001"
     environment:
       KAFKA_BROKERS: "kafka:9092"
       KAFKA_TOPIC: "weather-data"
