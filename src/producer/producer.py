@@ -7,6 +7,7 @@ from prometheus_client import start_http_server, Counter
 
 start_http_server(8000)
 WEATHER_REQUESTS = Counter('weather_requests', 'API request count')
+MESSAGES_SENT = Counter('producer_messages_sent_total', 'Total messages sent to Kafka')
 
 producer = KafkaProducer(
     bootstrap_servers=os.getenv('KAFKA_BROKERS', 'kafka:9092'), # Container DNS
@@ -27,6 +28,7 @@ while True:
     weather_periods = fetch_weather_data()
     for item in weather_periods:
         producer.send(topic, item)
+        MESSAGES_SENT.inc()
         print(f"Sent: {item}")
         time.sleep(5)
     time.sleep(300)
