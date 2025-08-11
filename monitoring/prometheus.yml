@@ -9,4 +9,4 @@ scrape_configs:
       - targets: ['weather-production:8000']
   - job_name: 'consumer'
     static_configs:
-      - targets: ['weather-consumer:8000']
+      - targets: ['weather-consumer:8001']
