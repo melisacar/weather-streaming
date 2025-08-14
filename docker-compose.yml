@@ -4,6 +4,7 @@ services:
     container_name: kafka
     ports:
       - "9092:9092"
+      - "7071:7071"
     environment:
       KAFKA_KRAFT_MODE: "true"
       KAFKA_NODE_ID: 1
