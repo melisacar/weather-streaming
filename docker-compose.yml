@@ -21,6 +21,8 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
       KAFKA_DEFAULT_REPLICATION_FACTOR: "1"
+      KAFKA_METRICS_REPORTERS: "io.confluent.metrics.reporter.ConfluentMetricsReporter"
+      CONFLUENT_METRICS_REPORTER_BOOTSTRAP_SERVERS: "kafka:9092" 
     volumes:
       - kafka_data:/var/lib/kafka/data
 
