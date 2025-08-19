@@ -4,7 +4,7 @@ services:
     container_name: kafka
     ports:
       - "9092:9092"
-      - "7071:7071"
+      - "7071:7071" # JMX port
     environment:
       KAFKA_KRAFT_MODE: "true"
       KAFKA_NODE_ID: 1
@@ -21,10 +21,11 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
       KAFKA_DEFAULT_REPLICATION_FACTOR: "1"
-      KAFKA_METRICS_REPORTERS: "io.confluent.metrics.reporter.ConfluentMetricsReporter"
-      CONFLUENT_METRICS_REPORTER_BOOTSTRAP_SERVERS: "kafka:9092" 
+      KAFKA_OPTS: "-javaagent:/jmx_prometheus_javaagent.jar=7071:/jmx_config.yml"
     volumes:
       - kafka_data:/var/lib/kafka/data
+      - ./monitoring/jmx_prometheus_javaagent.jar:/jmx_prometheus_javaagent.jar
+      - ./monitoring/jmx_config.yml:/jmx_config.yml
 
   weather-production:
     build:
