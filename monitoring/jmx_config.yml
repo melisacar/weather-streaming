@@ -1,0 +1,8 @@
+lowercaseOutputName: true
+rules:
+- pattern: "kafka.server<type=(.+), name=(.+)PerSec\w*><>Count"
+  name: "kafka_server_$1_$2_total"
+- pattern: "kafka.server<type=(.+), name=(.+)PerSec\w*><>MeanRate"
+  name: "kafka_server_$1_$2_mean_rate"
+- pattern: "kafka.server<type=(.+), name=(.+)PerSec\w*><>OneMinuteRate"
+  name: "kafka_server_$1_$2_one_minute_rate"
