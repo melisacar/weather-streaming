@@ -53,18 +53,6 @@ services:
       GROUP_ID: "weather-group"
     restart: on-failure
 
-  postgres:
-    image: postgres:13
-    container_name: postgres
-    ports:
-      - "5432:5432"
-    environment:
-      POSTGRES_USER: admin
-      POSTGRES_PASSWORD: secret
-      POSTGRES_DB: weather
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
     container_name: kafka-ui
@@ -99,5 +87,4 @@ services:
 
 volumes:
   kafka_data:
-  postgres_data:
   grafana_data:
