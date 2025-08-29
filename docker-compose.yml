@@ -84,7 +84,19 @@ services:
         - grafana_data:/var/lib/grafana
       depends_on:
         - prometheus
-
+  node-exporter:
+      image: prom/node-exporter:latest
+      ports:
+        - "9100:9100"
+      restart: unless-stopped
+      volumes:
+      - /proc:/host/proc:ro              # Process metrics
+      - /sys:/host/sys:ro                # System metrics  
+      - /:/rootfs:ro                     # Disk metrics
+      command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--path.rootfs=/rootfs'
 volumes:
   kafka_data:
   grafana_data:
