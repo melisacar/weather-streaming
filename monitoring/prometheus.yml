@@ -1,10 +1,9 @@
 global:
   scrape_interval: 15s
 scrape_configs:
-  - job_name: 'kafka-jmx'
+  - job_name: 'kafka'
     static_configs:
       - targets: ['kafka:7071']
-    metrics_path: /metrics
   - job_name: 'producer'
     static_configs:
       - targets: ['weather-production:8000']
