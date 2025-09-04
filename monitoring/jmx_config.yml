@@ -1,5 +1,3 @@
-# https://grafana.com/grafana/dashboards/18276-kafka-dashboard/
-# ID: 18276
 lowercaseOutputName: true
 rules:
 # Special cases and very specific rules
