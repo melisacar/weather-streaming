@@ -1,18 +1,27 @@
 from kafka import KafkaConsumer
 import json
 import sys
+import os
 from prometheus_client import start_http_server, Counter
+from dotenv import load_dotenv
+
+load_dotenv()
+
+KAFKA_BROKERS = os.getenv('KAFKA_BROKERS', 'kafka:9092')
+TOPIC = os.getenv('KAFKA_TOPIC', 'weather-data')
+GROUP_ID = os.getenv('GROUP_ID', 'weather-group')
+CONSUMER_PORT = int(os.getenv('CONSUMER_PORT', '8001'))
 
 messages_consumed = Counter('consumer_messages_consumed_total', 'Total messages consumed')
-start_http_server(8001)
+start_http_server(CONSUMER_PORT)
 
 try:
     consumer = KafkaConsumer(
-        'weather-data',
-        bootstrap_servers='kafka:9092',
+        TOPIC,
+        bootstrap_servers=KAFKA_BROKERS,
         auto_offset_reset='earliest',
         enable_auto_commit=True,
-        group_id='weather-group',
+        group_id=GROUP_ID,
         value_deserializer=lambda x: json.loads(x.decode('utf-8'))
     )
 
