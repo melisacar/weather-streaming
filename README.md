@@ -1,6 +1,6 @@
 # weather-streaming
 
-A production-grade real-time data streaming pipeline that ingests weather forecast data from the [National Weather Service API](weather.gov), publishes it to Apache Kafka, and exposes full observability through Prometheus and Grafana. Built to demonstrate professional data engineering patterns including event-driven architecture, containerized microservices, and metrics-driven monitoring.
+A production-grade real-time data streaming pipeline that ingests weather forecast data from the [National Weather Service API](https://weather.gov), publishes it to Apache Kafka, and exposes full observability through Prometheus and Grafana. Built to demonstrate professional data engineering patterns including event-driven architecture, containerized microservices, and metrics-driven monitoring.
 
 ---
 
