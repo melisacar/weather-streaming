@@ -1,294 +1,318 @@
 # weather-streaming
 
-weather.gov
+A production-grade real-time data streaming pipeline that ingests weather forecast data from the [National Weather Service API](weather.gov), publishes it to Apache Kafka, and exposes full observability through Prometheus and Grafana. Built to demonstrate professional data engineering patterns including event-driven architecture, containerized microservices, and metrics-driven monitoring.
 
-## 1. Get Grid Coordinates (Using Postman)
+---
 
-**Request**:  
+## Architecture
 
-```json
-GET https://api.weather.gov/points/{latitude},{longitude}
+```bash
+┌─────────────────┐     ┌──────────────┐     ┌─────────────────┐
+│  Weather.gov API │────▶│   Producer   │────▶│  Apache Kafka   │
+│  (NWS Forecast) │     │  (Python)    │     │  (KRaft mode)   │
+└─────────────────┘     └──────────────┘     └────────┬────────┘
+                                                       │
+                                              ┌────────▼────────┐
+                                              │    Consumer      │
+                                              │    (Python)      │
+                                              └─────────────────┘
+
+Observability layer:
+┌──────────────┐     ┌─────────────┐     ┌─────────────┐
+│ JMX Exporter │────▶│             │     │             │
+│ Node Exporter│────▶│ Prometheus  │────▶│   Grafana   │
+│ cAdvisor     │────▶│             │     │             │
+│ Producer     │────▶│             │     │             │
+│ Consumer     │────▶│             │     │             │
+└──────────────┘     └─────────────┘     └─────────────┘
 ```
+
+---
+
+## Tech Stack
+
+| Layer | Technology | Purpose |
+|---|---|---|
+| Message Broker | Apache Kafka 7.6 (KRaft) | Event streaming without Zookeeper |
+| Producer | Python + kafka-python | Fetches API data, publishes to Kafka |
+| Consumer | Python + kafka-python | Reads messages from Kafka topic |
+| Metrics | Prometheus | Scrapes and stores metrics from all services |
+| Dashboards | Grafana 9.5 | Visualizes pipeline health and performance |
+| Broker Metrics | JMX Exporter | Exposes Kafka internal JMX metrics to Prometheus |
+| Host Metrics | Node Exporter | CPU, memory, disk of the host machine |
+| Container Metrics | cAdvisor | Per-container resource usage |
+| Broker UI | Kafka UI | Inspect topics, partitions, consumer groups |
+| Config | python-dotenv | Environment-based configuration |
+| Orchestration | Docker Compose | Local multi-container setup |
+
+---
+
+## Project Structure
+
+```bash
+weather-streaming/
+  src/
+    producer/
+      producer.py          # fetches weather forecasts, publishes to Kafka topic
+    consumer/
+      consumer.py          # consumes messages from Kafka, prints to stdout
+  setup/
+    topics.py              # creates Kafka topics programmatically via admin client
+  monitoring/
+    dashboards/
+      kafka_grafana.json   # full Grafana dashboard definition (17 panels)
+    provisioning/
+      datasources/
+        prometheus.yml     # auto-configures Prometheus as Grafana datasource
+      dashboards/
+        dashboard.yml      # tells Grafana where to load dashboard JSONs from
+    jmx_config.yml         # JMX exporter configuration for Kafka broker metrics
+    prometheus.yml         # Prometheus scrape targets configuration
+  Dockerfile               # producer container image
+  Dockerfile.consumer      # consumer container image
+  docker-compose.yml       # full stack orchestration
+  requirements.txt         # Python dependencies
+  .env.example             # all required environment variables with descriptions
+```
+
+---
+
+## What Each Component Does
+
+### Producer (`src/producer/producer.py`)
+
+Fetches 7-day weather forecast data from the National Weather Service API every 5 minutes. Each forecast period (day/night slot) is serialized as JSON and published as a separate Kafka message. Exposes a Prometheus `/metrics` endpoint on port 8000 tracking request counts and messages sent.
+
+### Consumer (`src/consumer/consumer.py`)
+
+Reads messages from the `weather-data` Kafka topic as part of the `weather-group` consumer group. Deserializes JSON payloads and prints forecast data to stdout. Exposes a Prometheus `/metrics` endpoint on port 8001 tracking messages consumed.
+
+### Kafka (KRaft mode)
+
+Runs without Zookeeper using KRaft consensus. Single broker setup with 1 partition and replication factor 1. Topic is created programmatically via `setup/topics.py` using the Kafka admin client — auto topic creation is disabled by default in KRaft mode.
+
+### Observability Stack
+
+- **JMX Exporter** — runs as a Java agent inside the Kafka container, exposes broker internals (bytes in/out per topic, partition counts, ISR) to Prometheus
+- **Node Exporter** — exposes host machine CPU, memory, and disk metrics
+- **cAdvisor** — exposes per-container CPU, memory, and network I/O metrics
+- **Prometheus** — scrapes all five targets every 15 seconds
+- **Grafana** — auto-provisioned on startup with Prometheus datasource and full dashboard, no manual import needed
+
+### Grafana Dashboard (17 panels)
+
+| Panel | What it shows |
+|---|---|
+| Producer Rate | Messages/sec being published to Kafka |
+| Consumer Rate | Messages/sec being consumed |
+| Producer vs Consumer Total | Cumulative comparison — reveals consumer lag |
+| Kafka Broker Health | Broker up/down status (1 or 0) |
+| Weather API Requests | Rate of outbound API calls |
+| Producer CPU / Memory | Process-level resource usage of producer |
+| Consumer CPU / Memory | Process-level resource usage of consumer |
+| Host CPU / Memory / Disk | Underlying machine resource usage |
+| Kafka Bytes In / Out | Per-topic throughput from JMX |
+| Container CPU / Memory / Network | Container-level metrics from cAdvisor |
+
+---
+
+## Getting Started
+
+### Prerequisites
+
+- Docker
+- Docker Compose
+
+### Setup
+
+1. Clone the repo
+
+```
+git clone https://github.com/melisacar/weather-streaming.git
+cd weather-streaming
+```
+
+2. Create your env file
+
+```
+cp .env.example .env
+```
+
+3. Start the stack
+
+```
+docker compose up --build
+```
+
+4. Verify everything is running
+
+```
+docker compose ps
+```
+
+All 8 services should be up: kafka, weather-production, weather-consumer, kafka-ui, prometheus, grafana, node-exporter, cadvisor.
+
+---
+
+## Services
+
+| Service | URL | Credentials |
+|---|---|---|
+| Kafka UI | http://localhost:8080 | — |
+| Grafana | http://localhost:3000 | admin / admin |
+| Prometheus | http://localhost:9090 | — |
+| Producer metrics | http://localhost:8000/metrics | — |
+| Consumer metrics | http://localhost:8001/metrics | — |
+| cAdvisor | http://localhost:8085 | — |
+| Node Exporter | http://localhost:9100/metrics | — |
+
+---
+
+## Data Source
+
+The producer fetches from the [National Weather Service API](https://www.weather.gov) — a free, no-auth-required API maintained by NOAA. It returns 7-day forecasts broken into day/night periods for a given grid point.
+
+Example Kafka message:
 
 ```json
 {
-    "@context": [
-        "https://geojson.org/geojson-ld/geojson-context.jsonld",
-        {
-            "@version": "1.1",
-            "wx": "https://api.weather.gov/ontology#",
-            "s": "https://schema.org/",
-            "geo": "http://www.opengis.net/ont/geosparql#",
-            "unit": "http://codes.wmo.int/common/unit/",
-            "@vocab": "https://api.weather.gov/ontology#",
-            "geometry": {
-                "@id": "s:GeoCoordinates",
-                "@type": "geo:wktLiteral"
-            },
-            "city": "s:addressLocality",
-            "state": "s:addressRegion",
-            "distance": {
-                "@id": "s:Distance",
-                "@type": "s:QuantitativeValue"
-            },
-            "bearing": {
-                "@type": "s:QuantitativeValue"
-            },
-            "value": {
-                "@id": "s:value"
-            },
-            "unitCode": {
-                "@id": "s:unitCode",
-                "@type": "@id"
-            },
-            "forecastOffice": {
-                "@type": "@id"
-            },
-            "forecastGridData": {
-                "@type": "@id"
-            },
-            "publicZone": {
-                "@type": "@id"
-            },
-            "county": {
-                "@type": "@id"
-            }
-        }
-    ],
-    "id": "https://api.weather.gov/points/34.0947,-118.4017",
-    "type": "Feature",
-    "geometry": {
-        "type": "Point",
-        "coordinates": [
-            -118.4017,
-            34.0947
-        ]
-    },
-    "properties": {
-        "@id": "https://api.weather.gov/points/34.0947,-118.4017",
-        "@type": "wx:Point",
-        "cwa": "LOX",
-        "forecastOffice": "https://api.weather.gov/offices/LOX",
-        "gridId": "LOX",
-        "gridX": 150,
-        "gridY": 48,
-        "forecast": "https://api.weather.gov/gridpoints/LOX/150,48/forecast",
-        "forecastHourly": "https://api.weather.gov/gridpoints/LOX/150,48/forecast/hourly",
-        "forecastGridData": "https://api.weather.gov/gridpoints/LOX/150,48",
-        "observationStations": "https://api.weather.gov/gridpoints/LOX/150,48/stations",
-        "relativeLocation": {
-            "type": "Feature",
-            "geometry": {
-                "type": "Point",
-                "coordinates": [
-                    -118.402437,
-                    34.07923
-                ]
-            },
-            "properties": {
-                "city": "Beverly Hills",
-                "state": "CA",
-                "distance": {
-                    "unitCode": "wmoUnit:m",
-                    "value": 1721.5263548236
-                },
-                "bearing": {
-                    "unitCode": "wmoUnit:degree_(angle)",
-                    "value": 2
-                }
-            }
-        },
-        "forecastZone": "https://api.weather.gov/zones/forecast/CAZ368",
-        "county": "https://api.weather.gov/zones/county/CAC037",
-        "fireWeatherZone": "https://api.weather.gov/zones/fire/CAZ368",
-        "timeZone": "America/Los_Angeles",
-        "radarStation": "KSOX"
-    }
+  "name": "Today",
+  "startTime": "2026-04-29T06:00:00-07:00",
+  "endTime": "2026-04-29T18:00:00-07:00",
+  "isDaytime": true,
+  "temperature": 72,
+  "temperatureUnit": "F",
+  "windSpeed": "5 to 10 mph",
+  "windDirection": "W",
+  "shortForecast": "Sunny",
+  "detailedForecast": "Sunny. High near 72."
 }
 ```
 
+## How to Use Your Own Location
 
+The API uses a grid system. Follow these steps to get your coordinates.
 
-## Generating Cluster_ID for Kafka Service
+### Step 1 — Look up your grid point
 
-```py
+```bash
+curl https://api.weather.gov/points/{latitude},{longitude}
+```
+
+Example for Beverly Hills, CA:
+
+```bash
+curl https://api.weather.gov/points/34.0947,-118.4017
+```
+
+From the response grab:
+
+```json
+"gridId": "LOX",
+"gridX": 150,
+"gridY": 48
+```
+
+### Step 2 — Build your forecast URL
+
+```bash
+https://api.weather.gov/gridpoints/{gridId}/{gridX},{gridY}/forecast
+```
+
+### Step 3 — Set it in your .env
+
+```bash
+WEATHER_API_URL=https://api.weather.gov/gridpoints/LOX/150,48/forecast
+```
+
+Note: This API only covers the United States.
+
+---
+
+## Environment Variables
+
+See `.env.example` for the full list. Key variables:
+
+| Variable | Description | Default |
+|---|---|---|
+| KAFKA_BROKERS | Kafka broker address | kafka:9092 |
+| KAFKA_TOPIC | Topic name | weather-data |
+| GROUP_ID | Consumer group ID | weather-group |
+| PRODUCER_PORT | Producer metrics port | 8000 |
+| CONSUMER_PORT | Consumer metrics port | 8001 |
+| CLUSTER_ID | Kafka KRaft cluster ID | — |
+| WEATHER_API_URL | NWS forecast endpoint | LOX/150,48 |
+| GF_SECURITY_ADMIN_USER | Grafana admin username | admin |
+| GF_SECURITY_ADMIN_PASSWORD | Grafana admin password | admin |
+
+---
+
+## Roadmap
+
+### Done
+
+- [x] Kafka producer fetching from Weather.gov API
+- [x] Kafka consumer reading and printing messages
+- [x] Apache Kafka in KRaft mode (no Zookeeper)
+- [x] Programmatic topic creation via admin client
+- [x] Prometheus metrics exposed from producer and consumer
+- [x] JMX exporter for Kafka broker internals
+- [x] Node Exporter for host-level metrics
+- [x] cAdvisor for container-level metrics
+- [x] Grafana dashboard with 17 panels auto-provisioned on startup
+- [x] Environment-based configuration with .env and python-dotenv
+
+### In Progress
+
+- [ ] Error handling — API timeout, Kafka broker unavailable scenarios
+- [ ] Retry mechanism with exponential backoff (tenacity)
+- [ ] Dead Letter Queue (DLQ) for failed messages
+- [ ] Idempotent producer and consumer to prevent duplicate processing
+- [ ] JSON Schema validation for message format
+- [ ] Consumer lag panel in Grafana
+- [ ] API error rate panel in Grafana
+
+### Planned
+
+- [ ] pytest unit and integration tests with testcontainers
+- [ ] GitHub Actions CI/CD pipeline (lint + test + build)
+- [ ] MinIO as S3-compatible data lake (raw message storage)
+- [ ] TimescaleDB for time-series weather data storage
+- [ ] PySpark Structured Streaming for windowed aggregations
+- [ ] Avro schema + Confluent Schema Registry
+- [ ] Structured JSON logging with python-json-logger
+
+---
+
+## Notes
+
+- Kafka runs in KRaft mode — no Zookeeper container needed
+- Topic is not auto-created; run `setup/topics.py` before starting producer or it will fail
+- Grafana dashboard and datasource are provisioned automatically — `docker compose down -v` won't lose them
+- Weather.gov API is free, has no rate limits documented, and requires no API key
+- To generate a fresh Kafka Cluster ID:
+
+```
 python -c "import uuid, base64; print(base64.b64encode(uuid.uuid4().bytes).decode())"
 ```
 
+## Contributing
 
-## Generating Topic manually
+1. Fork the repo
+2. Create your branch
 
-Kafka'da "auto.create.topics.enable" özelliğinin kapalı olması olabilir. Bu ayar, KRaft (yani Zookeeper'sız Kafka) modunda default olarak false (kapalı) gelir. Yani:
+```
+git checkout -b feat/your-feature
+```
 
-Eğer topic mevcut değilse, Kafka otomatik olarak onu oluşturmaz.
+3. Commit using conventional commits
 
----
+```
+feat:     new feature
+fix:      bug fix
+refactor: code change that is not a fix or feature
+chore:    build, config, dependencies
+docs:     documentation only
+```
 
-## jmx_prometheus_javaagent.jar
-
-jmx jar dosyası indirildi. montiroing klasoru icine kondu.
-
----
-
-## 📊 Grafana Dashboard for Weather Kafka Pipeline
-
-This project includes a sample **Grafana dashboard JSON** that visualizes the metrics collected from the Kafka-based weather data pipeline.  
-The dashboard connects to **Prometheus**, which scrapes metrics from the following services:
-
-- **Kafka Broker (via JMX Exporter)**
-- **Weather Producer Service** (`/metrics` at port 8000)
-- **Weather Consumer Service** (`/metrics` at port 8001)
-
-### Dashboard Features
-
-The dashboard provides the following panels:
-
-1. **Producer Messages Sent Rate** – Monitors the rate of messages sent to Kafka.  
-2. **Consumer Messages Consumed Rate** – Monitors the rate of messages consumed from Kafka.  
-3. **Producer vs Consumer (Total)** – Compares cumulative messages sent and consumed.  
-4. **Kafka Broker Health** – Displays the broker’s status (up/down) from Prometheus.  
-5. **Weather API Requests Total** – Tracks the total number of API requests handled by the producer.  
-6. **Producer CPU Usage** – Shows CPU utilization of the producer container.  
-7. **Producer Memory Usage** – Shows memory utilization of the producer container.  
-8. **Consumer CPU Usage** – Shows CPU utilization of the consumer container.  
-9. **Consumer Memory Usage** – Shows memory utilization of the consumer container.  
-
-### Importing the Dashboard
-
-To import the dashboard into Grafana:
-
-1. Open Grafana in your browser (`http://localhost:3000` by default).  
-2. Go to **Dashboards → Import**.  
-3. Copy-paste the JSON below or upload it as a `.json` file.  
-
-### Dashboard JSON
-
-```json
-{
-  "annotations": {
-    "list": []
-  },
-  "panels": [
-    {
-      "type": "timeseries",
-      "title": "Producer Messages Sent Rate",
-      "targets": [
-        {
-          "expr": "rate(producer_messages_sent_total[1m])",
-          "legendFormat": "Producer",
-          "refId": "A"
-        }
-      ],
-      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 }
-    },
-    {
-      "type": "timeseries",
-      "title": "Consumer Messages Consumed Rate",
-      "targets": [
-        {
-          "expr": "rate(consumer_messages_consumed_total[1m])",
-          "legendFormat": "Consumer",
-          "refId": "A"
-        }
-      ],
-      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 }
-    },
-    {
-      "type": "timeseries",
-      "title": "Producer vs Consumer (Total)",
-      "targets": [
-        {
-          "expr": "producer_messages_sent_total",
-          "legendFormat": "Producer Total",
-          "refId": "A"
-        },
-        {
-          "expr": "consumer_messages_consumed_total",
-          "legendFormat": "Consumer Total",
-          "refId": "B"
-        }
-      ],
-      "gridPos": { "x": 0, "y": 8, "w": 24, "h": 8 }
-    },
-    {
-      "type": "stat",
-      "title": "Kafka Broker Health",
-      "targets": [
-        {
-          "expr": "up{job=\"kafka\"}",
-          "legendFormat": "Kafka Broker",
-          "refId": "A"
-        }
-      ],
-      "gridPos": { "x": 0, "y": 16, "w": 6, "h": 4 }
-    },
-    {
-      "type": "timeseries",
-      "title": "Weather API Requests Total",
-      "targets": [
-        {
-          "expr": "weather_requests_total",
-          "legendFormat": "API Requests",
-          "refId": "A"
-        }
-      ],
-      "gridPos": { "x": 6, "y": 16, "w": 18, "h": 6 }
-    },
-    {
-      "type": "timeseries",
-      "title": "Producer CPU Usage",
-      "targets": [
-        {
-          "expr": "rate(process_cpu_seconds_total{instance=\"weather-production:8000\"}[1m])",
-          "legendFormat": "Producer CPU",
-          "refId": "A"
-        }
-      ],
-      "gridPos": { "x": 0, "y": 22, "w": 12, "h": 6 }
-    },
-    {
-      "type": "timeseries",
-      "title": "Producer Memory Usage",
-      "targets": [
-        {
-          "expr": "process_resident_memory_bytes{instance=\"weather-production:8000\"}",
-          "legendFormat": "Producer Memory",
-          "refId": "A"
-        }
-      ],
-      "gridPos": { "x": 12, "y": 22, "w": 12, "h": 6 }
-    },
-    {
-      "type": "timeseries",
-      "title": "Consumer CPU Usage",
-      "targets": [
-        {
-          "expr": "rate(process_cpu_seconds_total{instance=\"weather-consumer:8001\"}[1m])",
-          "legendFormat": "Consumer CPU",
-          "refId": "A"
-        }
-      ],
-      "gridPos": { "x": 0, "y": 28, "w": 12, "h": 6 }
-    },
-    {
-      "type": "timeseries",
-      "title": "Consumer Memory Usage",
-      "targets": [
-        {
-          "expr": "process_resident_memory_bytes{instance=\"weather-consumer:8001\"}",
-          "legendFormat": "Consumer Memory",
-          "refId": "A"
-        }
-      ],
-      "gridPos": { "x": 12, "y": 28, "w": 12, "h": 6 }
-    }
-  ],
-  "schemaVersion": 37,
-  "title": "Weather Kafka Pipeline",
-  "version": 2
-}
-
----
-
-#### Add container metrics
-Cadvisor
+4. Push and open a pull request
