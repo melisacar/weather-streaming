@@ -2,3 +2,4 @@ requests
 kafka-python
 prometheus_client
 python-dotenv
+tenacity
