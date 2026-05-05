@@ -7,4 +7,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY src/producer/producer.py .
 COPY setup/topics.py setup/topics.py
 
-CMD ["python", "producer.py"]
+CMD ["sh", "-c", "python setup/topics.py && python producer.py"]
