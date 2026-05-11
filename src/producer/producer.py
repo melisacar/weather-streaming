@@ -8,6 +8,8 @@ import sys
 from prometheus_client import start_http_server, Counter
 from dotenv import load_dotenv
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from jsonschema import validate, ValidationError
+from schema import WEATHER_SCHEMA
 
 load_dotenv()
 
@@ -26,6 +28,7 @@ WEATHER_REQUESTS = Counter('weather_requests_total', 'Total API requests')
 MESSAGES_SENT = Counter('producer_messages_sent_total', 'Total messages sent to Kafka')
 WEATHER_REQUEST_ERRORS = Counter('weather_request_errors_total', 'Failed API requests')
 KAFKA_SEND_ERRORS = Counter('kafka_send_errors_total', 'Failed Kafka send attempts')
+VALIDATION_ERRORS = Counter('producer_validation_errors_total', 'Messages failed schema validation')
 
 
 def create_producer():
@@ -63,6 +66,14 @@ def fetch_weather_data():
 
 
 def send_message(producer, message):
+    try:
+        validate(instance=message, schema=WEATHER_SCHEMA)
+    except ValidationError as e:
+        VALIDATION_ERRORS.inc()
+        print(f"Message validation error: {e.message}", flush=True)
+        return # skip invalid message, don't send to Kafka
+    
+    
     try:
         future = producer.send(TOPIC, message)
         future.get(timeout=10)  # block until send confirmed or timeout
