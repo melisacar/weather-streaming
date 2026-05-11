@@ -4,3 +4,5 @@ prometheus_client
 python-dotenv
 tenacity
 jsonschema
+pytest
+pytest-mock
