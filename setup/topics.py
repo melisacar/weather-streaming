@@ -1,3 +1,5 @@
+import time
+
 from kafka.admin import KafkaAdminClient, NewTopic
 from kafka.errors import TopicAlreadyExistsError
 import os
@@ -12,10 +14,16 @@ NUM_PARTITIONS = int(os.getenv('NUM_PARTITIONS', '1'))
 REPLICATION_FACTOR = int(os.getenv('REPLICATION_FACTOR', '1'))
 
 def create_topics():
-    admin_client = KafkaAdminClient(
-        bootstrap_servers=KAFKA_BROKER,
-        client_id="setup-script"
-    )
+    while True:
+        try:
+            admin_client = KafkaAdminClient(
+                bootstrap_servers=KAFKA_BROKER,
+                client_id="setup-script"
+            )
+            break
+        except Exception as e:
+            print(f"Failed to connect to Kafka: {e}", flush=True)
+            time.sleep(5)
 
     topic_list = [
             NewTopic(
