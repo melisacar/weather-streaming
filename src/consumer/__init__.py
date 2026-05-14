@@ -1,0 +1,1 @@
+"""Weather streaming consumer module."""
