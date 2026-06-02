@@ -8,17 +8,17 @@ A production-grade real-time data streaming pipeline that ingests weather foreca
 
 ```bash
 ┌─────────────────┐     ┌──────────────┐     ┌─────────────────┐
-│  Weather.gov API │────▶│   Producer   │────▶│  Apache Kafka   │
+│  Weather.gov API │────▶│   Producer   │────▶│  Apache Kafka │
 │  (NWS Forecast) │     │  (Python)    │     │  (KRaft mode)   │
 └─────────────────┘     └──────────────┘     └────────┬────────┘
                                                        │
                                               ┌────────▼────────┐
-                                              │    Consumer      │
-                                              │    (Python)      │
+                                              │    Consumer     │
+                                              │    (Python)     │
                                               └─────────────────┘
 
 Observability layer:
-┌──────────────┐     ┌─────────────┐     ┌─────────────┐
+┌──────────────┐      ┌─────────────┐     ┌─────────────┐
 │ JMX Exporter │────▶│             │     │             │
 │ Node Exporter│────▶│ Prometheus  │────▶│   Grafana   │
 │ cAdvisor     │────▶│             │     │             │
@@ -264,13 +264,13 @@ See `.env.example` for the full list. Key variables:
 
 ### In Progress
 
-- [ ] Error handling — API timeout, Kafka broker unavailable scenarios
-- [ ] Retry mechanism with exponential backoff (tenacity)
-- [ ] Dead Letter Queue (DLQ) for failed messages
-- [ ] Idempotent producer and consumer to prevent duplicate processing
-- [ ] JSON Schema validation for message format
-- [ ] Consumer lag panel in Grafana
-- [ ] API error rate panel in Grafana
+- [x] Error handling — API timeout, Kafka broker unavailable scenarios
+- [x] Retry mechanism with exponential backoff (tenacity)
+- [x] Dead Letter Queue (DLQ) for failed messages
+- [x] Idempotent producer and consumer to prevent duplicate processing
+- [x] JSON Schema validation for message format
+- [x] Consumer lag panel in Grafana
+- [x] API error rate panel in Grafana
 
 ### Planned
 
@@ -281,6 +281,7 @@ See `.env.example` for the full list. Key variables:
 - [ ] PySpark Structured Streaming for windowed aggregations
 - [ ] Avro schema + Confluent Schema Registry
 - [ ] Structured JSON logging with python-json-logger
+- [ ] Kubernetes deployment (Helm charts)
 
 ---
 
@@ -292,8 +293,15 @@ See `.env.example` for the full list. Key variables:
 - Weather.gov API is free, has no rate limits documented, and requires no API key
 - To generate a fresh Kafka Cluster ID:
 
-```
+```bash
 python -c "import uuid, base64; print(base64.b64encode(uuid.uuid4().bytes).decode())"
+```
+
+- Python 3.12+ requires `kafka-python-ng` instead of `kafka-python` due to a compatibility issue with the `six` vendor module. The `requirements.txt` uses `kafka-python` for Docker (Python 3.9), but if running tests locally on Python 3.12+, install `kafka-python-ng` instead:
+
+```bash
+  pip uninstall kafka-python -y
+  pip install kafka-python-ng
 ```
 
 ## Contributing
