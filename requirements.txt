@@ -1,5 +1,5 @@
 requests
-kafka-python
+kafka-python-ng
 prometheus_client
 python-dotenv
 tenacity

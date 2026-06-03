@@ -9,7 +9,7 @@ from prometheus_client import start_http_server, Counter
 from dotenv import load_dotenv
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 from jsonschema import validate, ValidationError
-from schema import WEATHER_SCHEMA
+from src.producer.schema import WEATHER_SCHEMA
 
 load_dotenv()
 

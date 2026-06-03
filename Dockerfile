@@ -4,8 +4,9 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY src/producer/producer.py .
-COPY src/producer/schema.py .
+COPY src/ src/
 COPY setup/topics.py setup/topics.py
 
-CMD ["sh", "-c", "python setup/topics.py && python producer.py"]
+ENV PYTHONPATH=/app
+
+CMD ["sh", "-c", "python setup/topics.py && python src/producer/producer.py"]
