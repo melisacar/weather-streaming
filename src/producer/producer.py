@@ -4,7 +4,6 @@ import json
 import requests
 import time
 import os
-import sys
 from prometheus_client import start_http_server, Counter
 from dotenv import load_dotenv
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type

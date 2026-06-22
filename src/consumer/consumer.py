@@ -1,7 +1,6 @@
 from kafka import KafkaConsumer, TopicPartition, KafkaProducer
 from kafka.errors import KafkaError
 import json
-import sys
 import os
 import time
 from prometheus_client import start_http_server, Counter, Gauge

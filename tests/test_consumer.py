@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock
 from src.consumer.consumer import process_message, send_to_dlq, update_lag, DLQ_TOPIC
 
 
