@@ -274,8 +274,9 @@ See `.env.example` for the full list. Key variables:
 
 ### Planned
 
-- [ ] pytest unit and integration tests with testcontainers
-- [ ] GitHub Actions CI/CD pipeline (lint + test + build)
+- [x] pytest unit and integration tests with testcontainers
+- [x] GitHub Actions CI pipeline (lint + test)
+- [ ] GitHub Actions CD pipeline (build + deploy)
 - [ ] MinIO as S3-compatible data lake (raw message storage)
 - [ ] TimescaleDB for time-series weather data storage
 - [ ] PySpark Structured Streaming for windowed aggregations
