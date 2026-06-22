@@ -1,5 +1,4 @@
 import pytest
-import json
 from unittest.mock import MagicMock, patch
 from src.producer.producer import fetch_weather_data, send_message, TOPIC
 
