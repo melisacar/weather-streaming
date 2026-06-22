@@ -41,7 +41,7 @@ def create_producer():
                 acks='all',                  # wait for all replicas to acknowledge
                 retries=5,                   # retry failed sends up to 5 times
                 retry_backoff_ms=500,        # wait 500ms between retries
-                enable_idempotence=True,     # prevent duplicate messages on retry
+                #enable_idempotence=True,    # not supported in kafka-python-ng on Python 3.9
             )
             print("Kafka producer connected.", flush=True)
             return producer
