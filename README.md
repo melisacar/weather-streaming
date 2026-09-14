@@ -259,30 +259,30 @@ See `.env.example` for the full list. Key variables:
 - [x] JMX exporter for Kafka broker internals
 - [x] Node Exporter for host-level metrics
 - [x] cAdvisor for container-level metrics
-- [x] Grafana dashboard with 17 panels auto-provisioned on startup
+- [x] Grafana dashboard with 21 panels auto-provisioned on startup
 - [x] Environment-based configuration with .env and python-dotenv
-
-### In Progress
-
 - [x] Error handling — API timeout, Kafka broker unavailable scenarios
 - [x] Retry mechanism with exponential backoff (tenacity)
 - [x] Dead Letter Queue (DLQ) for failed messages
-- [x] Idempotent producer and consumer to prevent duplicate processing
 - [x] JSON Schema validation for message format
-- [x] Consumer lag panel in Grafana
-- [x] API error rate panel in Grafana
+- [x] Consumer lag, API error rate, schema validation, DLQ panels in Grafana
+- [x] pytest unit tests — producer, consumer, schema (20 tests)
+- [x] GitHub Actions CI pipeline (lint + test)
+- [x] MinIO as S3-compatible data lake (raw message storage)
+
+### In Progress
+
+- [ ] pytest — MinIO write tests
+- [ ] TimescaleDB for time-series weather data storage
 
 ### Planned
 
-- [x] pytest unit and integration tests with testcontainers
-- [x] GitHub Actions CI pipeline (lint + test)
 - [ ] GitHub Actions CD pipeline (build + deploy)
-- [ ] MinIO as S3-compatible data lake (raw message storage)
-- [ ] TimescaleDB for time-series weather data storage
 - [ ] PySpark Structured Streaming for windowed aggregations
 - [ ] Avro schema + Confluent Schema Registry
 - [ ] Structured JSON logging with python-json-logger
 - [ ] Kubernetes deployment (Helm charts)
+- [ ] Terraform for infrastructure management
 
 ---
 
