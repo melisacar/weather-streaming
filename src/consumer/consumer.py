@@ -5,6 +5,9 @@ import os
 import time
 from prometheus_client import start_http_server, Counter, Gauge
 from dotenv import load_dotenv
+import boto3
+from botocore.exceptions import ClientError
+from datetime import datetime, timezone
 
 load_dotenv()
 
@@ -13,6 +16,10 @@ TOPIC = os.getenv('KAFKA_TOPIC', 'weather-data')
 GROUP_ID = os.getenv('GROUP_ID', 'weather-group')
 CONSUMER_PORT = int(os.getenv('CONSUMER_PORT', '8001'))
 DLQ_TOPIC = os.getenv('DLQ_TOPIC', 'weather-data.dlq')
+MINIO_ENDPOINT = os.getenv('MINIO_ENDPOINT', 'minio:9000')
+MINIO_BUCKET = os.getenv('MINIO_BUCKET', 'weather-raw')
+MINIO_ROOT_USER = os.getenv('MINIO_ROOT_USER', 'minioadmin')
+MINIO_ROOT_PASSWORD = os.getenv('MINIO_ROOT_PASSWORD', 'minioadmin')
 
 start_http_server(CONSUMER_PORT)
 
@@ -20,6 +27,8 @@ MESSAGES_CONSUMED = Counter('consumer_messages_consumed_total', 'Total messages 
 CONSUMER_ERRORS = Counter('consumer_errors_total', 'Total consumer errors')
 CONSUMER_LAG = Gauge('consumer_lag', 'Consumer lag per partition', ['topic', 'partition'])
 DLQ_MESSAGES = Counter('consumer_dlq_messages_total', 'Total messages sent to DLQ')
+MINIO_WRITES = Counter('consumer_minio_writes_total', 'Total messages written to MinIO')
+MINIO_ERRORS = Counter('consumer_minio_errors_total', 'Failed MinIO write attempts')
 
 
 def create_consumer():
@@ -97,10 +106,46 @@ def process_message(message):
         flush=True
     )
 
+def create_minio_client():
+    return boto3.client(
+        's3',
+        endpoint_url=f'http://{MINIO_ENDPOINT}',
+        aws_access_key_id=MINIO_ROOT_USER,
+        aws_secret_access_key=MINIO_ROOT_PASSWORD,
+    )
+
+
+def ensure_bucket(client):
+    try:
+        client.head_bucket(Bucket=MINIO_BUCKET)
+    except ClientError:
+        client.create_bucket(Bucket=MINIO_BUCKET)
+        print(f"Bucket '{MINIO_BUCKET}' created.", flush=True)
+
+
+def write_to_minio(client, message):
+    # store raw message as JSON under raw/YYYY/MM/DD/HH/offset.json
+    now = datetime.now(timezone.utc)
+    key = f"raw/{now.strftime('%Y/%m/%d/%H')}/{message.partition}-{message.offset}.json"
+    try:
+        client.put_object(
+            Bucket=MINIO_BUCKET,
+            Key=key,
+            Body=json.dumps(message.value).encode('utf-8'),
+            ContentType='application/json',
+        )
+        MINIO_WRITES.inc()
+        print(f"Written to MinIO: {key}", flush=True)
+    except Exception as e:
+        MINIO_ERRORS.inc()
+        print(f"MinIO write error: {e}", flush=True)
+
 
 def main():
     consumer = create_consumer()
     dlq_producer = create_dlq_producer()
+    minio_client = create_minio_client()
+    ensure_bucket(minio_client)
     print("Waiting for messages...\n", flush=True)
 
     for message in consumer:
@@ -108,6 +153,7 @@ def main():
             process_message(message)
             MESSAGES_CONSUMED.inc()
             update_lag(consumer)
+            write_to_minio(minio_client, message)
         except Exception as e:
             CONSUMER_ERRORS.inc()
             print(f"Error processing message: {e}", flush=True)
