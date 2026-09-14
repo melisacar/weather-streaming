@@ -11,24 +11,28 @@ from datetime import datetime, timezone
 
 load_dotenv()
 
-KAFKA_BROKERS = os.getenv('KAFKA_BROKERS', 'kafka:9092')
-TOPIC = os.getenv('KAFKA_TOPIC', 'weather-data')
-GROUP_ID = os.getenv('GROUP_ID', 'weather-group')
-CONSUMER_PORT = int(os.getenv('CONSUMER_PORT', '8001'))
-DLQ_TOPIC = os.getenv('DLQ_TOPIC', 'weather-data.dlq')
-MINIO_ENDPOINT = os.getenv('MINIO_ENDPOINT', 'minio:9000')
-MINIO_BUCKET = os.getenv('MINIO_BUCKET', 'weather-raw')
-MINIO_ROOT_USER = os.getenv('MINIO_ROOT_USER', 'minioadmin')
-MINIO_ROOT_PASSWORD = os.getenv('MINIO_ROOT_PASSWORD', 'minioadmin')
+KAFKA_BROKERS = os.getenv("KAFKA_BROKERS", "kafka:9092")
+TOPIC = os.getenv("KAFKA_TOPIC", "weather-data")
+GROUP_ID = os.getenv("GROUP_ID", "weather-group")
+CONSUMER_PORT = int(os.getenv("CONSUMER_PORT", "8001"))
+DLQ_TOPIC = os.getenv("DLQ_TOPIC", "weather-data.dlq")
+MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "minio:9000")
+MINIO_BUCKET = os.getenv("MINIO_BUCKET", "weather-raw")
+MINIO_ROOT_USER = os.getenv("MINIO_ROOT_USER", "minioadmin")
+MINIO_ROOT_PASSWORD = os.getenv("MINIO_ROOT_PASSWORD", "minioadmin")
 
 start_http_server(CONSUMER_PORT)
 
-MESSAGES_CONSUMED = Counter('consumer_messages_consumed_total', 'Total messages consumed')
-CONSUMER_ERRORS = Counter('consumer_errors_total', 'Total consumer errors')
-CONSUMER_LAG = Gauge('consumer_lag', 'Consumer lag per partition', ['topic', 'partition'])
-DLQ_MESSAGES = Counter('consumer_dlq_messages_total', 'Total messages sent to DLQ')
-MINIO_WRITES = Counter('consumer_minio_writes_total', 'Total messages written to MinIO')
-MINIO_ERRORS = Counter('consumer_minio_errors_total', 'Failed MinIO write attempts')
+MESSAGES_CONSUMED = Counter(
+    "consumer_messages_consumed_total", "Total messages consumed"
+)
+CONSUMER_ERRORS = Counter("consumer_errors_total", "Total consumer errors")
+CONSUMER_LAG = Gauge(
+    "consumer_lag", "Consumer lag per partition", ["topic", "partition"]
+)
+DLQ_MESSAGES = Counter("consumer_dlq_messages_total", "Total messages sent to DLQ")
+MINIO_WRITES = Counter("consumer_minio_writes_total", "Total messages written to MinIO")
+MINIO_ERRORS = Counter("consumer_minio_errors_total", "Failed MinIO write attempts")
 
 
 def create_consumer():
@@ -38,10 +42,10 @@ def create_consumer():
             consumer = KafkaConsumer(
                 TOPIC,
                 bootstrap_servers=KAFKA_BROKERS,
-                auto_offset_reset='earliest',
+                auto_offset_reset="earliest",
                 enable_auto_commit=True,
                 group_id=GROUP_ID,
-                value_deserializer=lambda x: json.loads(x.decode('utf-8')),
+                value_deserializer=lambda x: json.loads(x.decode("utf-8")),
             )
             print("Kafka consumer connected.", flush=True)
             return consumer
@@ -55,13 +59,14 @@ def create_dlq_producer():
         try:
             producer = KafkaProducer(
                 bootstrap_servers=KAFKA_BROKERS,
-                value_serializer=lambda v: json.dumps(v).encode('utf-8'),
+                value_serializer=lambda v: json.dumps(v).encode("utf-8"),
             )
-            print("DLQ producer connected"  , flush=True)
+            print("DLQ producer connected", flush=True)
             return producer
         except KafkaError as e:
             print(f"DLQ producer not ready, retrying in 5s: {e}", flush=True)
             time.sleep(5)
+
 
 def send_to_dlq(dlq_producer, message, error):
     dlq_payload = {
@@ -79,7 +84,6 @@ def send_to_dlq(dlq_producer, message, error):
         print(f"Sent to DLQ: {dlq_payload}", flush=True)
     except Exception as e:
         print(f"Failed to send to DLQ: {e}", flush=True)
-
 
 
 def update_lag(consumer):
@@ -103,13 +107,14 @@ def process_message(message):
         f"[{message.timestamp}] {data['startTime']} → "
         f"{data['temperature']}°{data['temperatureUnit']}, "
         f"{data['shortForecast']}",
-        flush=True
+        flush=True,
     )
+
 
 def create_minio_client():
     return boto3.client(
-        's3',
-        endpoint_url=f'http://{MINIO_ENDPOINT}',
+        "s3",
+        endpoint_url=f"http://{MINIO_ENDPOINT}",
         aws_access_key_id=MINIO_ROOT_USER,
         aws_secret_access_key=MINIO_ROOT_PASSWORD,
     )
@@ -131,8 +136,8 @@ def write_to_minio(client, message):
         client.put_object(
             Bucket=MINIO_BUCKET,
             Key=key,
-            Body=json.dumps(message.value).encode('utf-8'),
-            ContentType='application/json',
+            Body=json.dumps(message.value).encode("utf-8"),
+            ContentType="application/json",
         )
         MINIO_WRITES.inc()
         print(f"Written to MinIO: {key}", flush=True)

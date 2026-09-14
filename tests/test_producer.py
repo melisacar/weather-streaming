@@ -15,7 +15,7 @@ FAKE_PERIODS = [
         "windSpeed": "5 to 10 mph",
         "windDirection": "W",
         "shortForecast": "Sunny",
-        "detailedForecast": "Sunny. High near 72."
+        "detailedForecast": "Sunny. High near 72.",
     }
 ]
 
@@ -23,11 +23,7 @@ FAKE_PERIODS = [
 def test_fetch_weather_data_returns_periods():
     # mock requests.get to return fake API response
     fake_response = MagicMock()
-    fake_response.json.return_value = {
-        "properties": {
-            "periods": FAKE_PERIODS
-        }
-    }
+    fake_response.json.return_value = {"properties": {"periods": FAKE_PERIODS}}
     fake_response.raise_for_status = MagicMock()
 
     with patch("src.producer.producer.requests.get", return_value=fake_response):
@@ -52,7 +48,10 @@ def test_fetch_weather_data_calls_raise_for_status():
 def test_fetch_weather_data_timeout_raises():
     # when requests times out, exception should propagate
     import requests
-    with patch("src.producer.producer.requests.get", side_effect=requests.exceptions.Timeout):
+
+    with patch(
+        "src.producer.producer.requests.get", side_effect=requests.exceptions.Timeout
+    ):
         with pytest.raises(Exception):
             fetch_weather_data()
 
@@ -73,6 +72,7 @@ def test_send_message_success():
 def test_send_message_kafka_error_does_not_raise():
     # when Kafka send fails, function should handle it gracefully
     from kafka.errors import KafkaError
+
     mock_producer = MagicMock()
     mock_producer.send.side_effect = KafkaError("broker unavailable")
 

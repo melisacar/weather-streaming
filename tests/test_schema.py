@@ -13,19 +13,22 @@ VALID_MESSAGE = {
     "windSpeed": "5 to 10 mph",
     "windDirection": "W",
     "shortForecast": "Sunny",
-    "detailedForecast": "Sunny. High near 72."
+    "detailedForecast": "Sunny. High near 72.",
 }
+
 
 def test_valid_message_passes():
     # valid message should not raise
     validate(instance=VALID_MESSAGE, schema=WEATHER_SCHEMA)
 
+
 def test_missing_required_field_fails():
     # temperature is required, removing it should fail
     msg = VALID_MESSAGE.copy()
-    del msg['temperature']
+    del msg["temperature"]
     with pytest.raises(ValidationError):
         validate(instance=msg, schema=WEATHER_SCHEMA)
+
 
 def test_wrong_temperature_type_fails():
     # temperature must be integer, string should fail
@@ -33,6 +36,7 @@ def test_wrong_temperature_type_fails():
     msg["temperature"] = "seventy-two"
     with pytest.raises(ValidationError):
         validate(instance=msg, schema=WEATHER_SCHEMA)
+
 
 def test_wrong_is_daytime_type_fails():
     # isDaytime must be boolean, string should fail
