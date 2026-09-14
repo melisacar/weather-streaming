@@ -98,3 +98,104 @@ def test_update_lag_handles_none_partitions():
 
     update_lag(mock_consumer)
     # should not raise
+
+def test_write_to_minio_success():
+    # successful write should increment MINIO_WRITES counter
+    mock_client = MagicMock()
+    mock_client.put_object.return_value = {}
+
+    from src.consumer.consumer import write_to_minio, MINIO_WRITES
+    before = MINIO_WRITES._value.get()
+
+    write_to_minio(mock_client, FAKE_MESSAGE)
+
+    after = MINIO_WRITES._value.get()
+    assert after == before + 1
+    mock_client.put_object.assert_called_once()
+
+
+def test_write_to_minio_correct_bucket():
+    # should write to correct bucket
+    mock_client = MagicMock()
+
+    from src.consumer.consumer import write_to_minio, MINIO_BUCKET
+    write_to_minio(mock_client, FAKE_MESSAGE)
+
+    call_args = mock_client.put_object.call_args
+    assert call_args[1]['Bucket'] == MINIO_BUCKET
+
+
+def test_write_to_minio_correct_content_type():
+    # should write with application/json content type
+    mock_client = MagicMock()
+
+    from src.consumer.consumer import write_to_minio
+    write_to_minio(mock_client, FAKE_MESSAGE)
+
+    call_args = mock_client.put_object.call_args
+    assert call_args[1]['ContentType'] == 'application/json'
+
+
+def test_write_to_minio_key_format():
+    # key should follow raw/YYYY/MM/DD/HH/partition-offset.json format
+    mock_client = MagicMock()
+
+    from src.consumer.consumer import write_to_minio
+    write_to_minio(mock_client, FAKE_MESSAGE)
+
+    call_args = mock_client.put_object.call_args
+    key = call_args[1]['Key']
+    assert key.startswith('raw/')
+    assert key.endswith(f'{FAKE_MESSAGE.partition}-{FAKE_MESSAGE.offset}.json')
+
+
+def test_write_to_minio_error_increments_counter():
+    # failed write should increment MINIO_ERRORS counter
+    mock_client = MagicMock()
+    mock_client.put_object.side_effect = Exception("connection refused")
+
+    from src.consumer.consumer import write_to_minio, MINIO_ERRORS
+    before = MINIO_ERRORS._value.get()
+
+    write_to_minio(mock_client, FAKE_MESSAGE)
+
+    after = MINIO_ERRORS._value.get()
+    assert after == before + 1
+
+
+def test_write_to_minio_error_does_not_raise():
+    # failed write should not crash the consumer
+    mock_client = MagicMock()
+    mock_client.put_object.side_effect = Exception("connection refused")
+
+    from src.consumer.consumer import write_to_minio
+    write_to_minio(mock_client, FAKE_MESSAGE)
+    # should not raise
+
+
+def test_ensure_bucket_creates_if_not_exists():
+    # if bucket does not exist, should create it
+    from botocore.exceptions import ClientError
+    from src.consumer.consumer import ensure_bucket
+
+    mock_client = MagicMock()
+    mock_client.head_bucket.side_effect = ClientError(
+        {'Error': {'Code': '404', 'Message': 'Not Found'}},
+        'HeadBucket'
+    )
+
+    ensure_bucket(mock_client)
+
+    mock_client.create_bucket.assert_called_once()
+
+
+def test_ensure_bucket_skips_if_exists():
+    # if bucket exists, should not create it
+    from src.consumer.consumer import ensure_bucket
+
+    mock_client = MagicMock()
+    mock_client.head_bucket.return_value = {}
+
+    ensure_bucket(mock_client)
+
+    mock_client.create_bucket.assert_not_called()
