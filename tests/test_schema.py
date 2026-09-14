@@ -1,5 +1,6 @@
 import pytest
-from jsonschema import validate, ValidationError
+from jsonschema import ValidationError, validate
+
 from src.producer.schema import WEATHER_SCHEMA
 
 VALID_MESSAGE = {

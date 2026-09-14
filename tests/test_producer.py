@@ -1,7 +1,8 @@
-import pytest
 from unittest.mock import MagicMock, patch
-from src.producer.producer import fetch_weather_data, send_message, TOPIC
 
+import pytest
+
+from src.producer.producer import TOPIC, fetch_weather_data, send_message
 
 FAKE_PERIODS = [
     {

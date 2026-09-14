@@ -1,7 +1,8 @@
-import pytest
 from unittest.mock import MagicMock
-from src.consumer.consumer import process_message, send_to_dlq, update_lag, DLQ_TOPIC
 
+import pytest
+
+from src.consumer.consumer import DLQ_TOPIC, process_message, send_to_dlq, update_lag
 
 FAKE_MESSAGE = MagicMock()
 FAKE_MESSAGE.value = {
@@ -109,7 +110,7 @@ def test_write_to_minio_success():
     mock_client = MagicMock()
     mock_client.put_object.return_value = {}
 
-    from src.consumer.consumer import write_to_minio, MINIO_WRITES
+    from src.consumer.consumer import MINIO_WRITES, write_to_minio
 
     before = MINIO_WRITES._value.get()
 
@@ -124,7 +125,7 @@ def test_write_to_minio_correct_bucket():
     # should write to correct bucket
     mock_client = MagicMock()
 
-    from src.consumer.consumer import write_to_minio, MINIO_BUCKET
+    from src.consumer.consumer import MINIO_BUCKET, write_to_minio
 
     write_to_minio(mock_client, FAKE_MESSAGE)
 
@@ -163,7 +164,7 @@ def test_write_to_minio_error_increments_counter():
     mock_client = MagicMock()
     mock_client.put_object.side_effect = Exception("connection refused")
 
-    from src.consumer.consumer import write_to_minio, MINIO_ERRORS
+    from src.consumer.consumer import MINIO_ERRORS, write_to_minio
 
     before = MINIO_ERRORS._value.get()
 
@@ -187,6 +188,7 @@ def test_write_to_minio_error_does_not_raise():
 def test_ensure_bucket_creates_if_not_exists():
     # if bucket does not exist, should create it
     from botocore.exceptions import ClientError
+
     from src.consumer.consumer import ensure_bucket
 
     mock_client = MagicMock()

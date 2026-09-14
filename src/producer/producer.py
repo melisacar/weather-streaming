@@ -1,18 +1,20 @@
+import json
+import os
+import time
+
+import requests
+from dotenv import load_dotenv
+from jsonschema import ValidationError, validate
 from kafka import KafkaProducer
 from kafka.errors import KafkaError
-import json
-import requests
-import time
-import os
-from prometheus_client import start_http_server, Counter
-from dotenv import load_dotenv
+from prometheus_client import Counter, start_http_server
 from tenacity import (
     retry,
+    retry_if_exception_type,
     stop_after_attempt,
     wait_exponential,
-    retry_if_exception_type,
 )
-from jsonschema import validate, ValidationError
+
 from src.producer.schema import WEATHER_SCHEMA
 
 load_dotenv()

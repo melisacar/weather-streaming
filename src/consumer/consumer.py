@@ -1,13 +1,14 @@
-from kafka import KafkaConsumer, TopicPartition, KafkaProducer
-from kafka.errors import KafkaError
 import json
 import os
 import time
-from prometheus_client import start_http_server, Counter, Gauge
-from dotenv import load_dotenv
+from datetime import datetime, timezone
+
 import boto3
 from botocore.exceptions import ClientError
-from datetime import datetime, timezone
+from dotenv import load_dotenv
+from kafka import KafkaConsumer, KafkaProducer, TopicPartition
+from kafka.errors import KafkaError
+from prometheus_client import Counter, Gauge, start_http_server
 
 load_dotenv()
 
