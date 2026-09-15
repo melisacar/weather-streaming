@@ -1,12 +1,6 @@
 WEATHER_SCHEMA = {
     "type": "object",
-    "required": [
-        "startTime",
-        "endTime",
-        "temperature",
-        "temperatureUnit",
-        "shortForecast",
-    ],
+    "required": ["startTime", "endTime", "temperature", "temperatureUnit", "shortForecast"],
     "properties": {
         "startTime": {"type": "string"},
         "endTime": {"type": "string"},
@@ -17,5 +11,6 @@ WEATHER_SCHEMA = {
         "windDirection": {"type": "string"},
         "isDaytime": {"type": "boolean"},
         "name": {"type": "string"},
+        "wind_speed_mph": {"type": "number"},
     },
 }

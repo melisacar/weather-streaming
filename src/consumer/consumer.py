@@ -4,11 +4,13 @@ import time
 from datetime import datetime, timezone
 
 import boto3
+import psycopg2
 from botocore.exceptions import ClientError
 from dotenv import load_dotenv
 from kafka import KafkaConsumer, KafkaProducer, TopicPartition
 from kafka.errors import KafkaError
 from prometheus_client import Counter, Gauge, start_http_server
+from psycopg2.extras import execute_values
 
 load_dotenv()
 
@@ -21,6 +23,11 @@ MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "minio:9000")
 MINIO_BUCKET = os.getenv("MINIO_BUCKET", "weather-raw")
 MINIO_ROOT_USER = os.getenv("MINIO_ROOT_USER", "minioadmin")
 MINIO_ROOT_PASSWORD = os.getenv("MINIO_ROOT_PASSWORD", "minioadmin")
+TIMESCALE_HOST = os.getenv("TIMESCALE_HOST", "timescaledb")
+TIMESCALE_PORT = int(os.getenv("TIMESCALE_PORT", "5432"))
+TIMESCALE_USER = os.getenv("TIMESCALE_USER", "weatheruser")
+TIMESCALE_PASSWORD = os.getenv("TIMESCALE_PASSWORD", "weatherpass")
+TIMESCALE_DB = os.getenv("TIMESCALE_DB", "weather")
 
 start_http_server(CONSUMER_PORT)
 
@@ -35,6 +42,8 @@ DLQ_MESSAGES = Counter("consumer_dlq_messages_total", "Total messages sent to DL
 MINIO_WRITES = Counter("consumer_minio_writes_total", "Total messages written to MinIO")
 MINIO_ERRORS = Counter("consumer_minio_errors_total", "Failed MinIO write attempts")
 
+TIMESCALE_WRITES = Counter("consumer_timescale_writes_total", "Total rows written to TimescaleDB")
+TIMESCALE_ERRORS = Counter("consumer_timescale_errors_total", "Failed TimescaleDB write attempts")
 
 def create_consumer():
     # retry connecting to Kafka broker on startup
@@ -146,12 +155,87 @@ def write_to_minio(client, message):
         MINIO_ERRORS.inc()
         print(f"MinIO write error: {e}", flush=True)
 
+def create_timescale_conn():
+    # retry connecting to TimescaleDB on startup
+    while True:
+        try:
+            conn = psycopg2.connect(
+                host=TIMESCALE_HOST,
+                port=TIMESCALE_PORT,
+                user=TIMESCALE_USER,
+                password=TIMESCALE_PASSWORD,
+                dbname=TIMESCALE_DB,
+            )
+            print("TimescaleDB connected.", flush=True)
+            return conn
+        except Exception as e:
+            print(f"TimescaleDB not ready, retrying in 5s: {e}", flush=True)
+            time.sleep(5)
+
+def calculate_wind_power(wind_speed_mph):
+    # simplified wind power formula: P = 0.5 * rho * A * v^3
+    # rho = 1.225 kg/m3 (air density), A = 50 m2 (rotor area), converted to kW
+    wind_speed_ms = wind_speed_mph * 0.44704
+    return round(0.5 * 1.225 * 50 * wind_speed_ms**3 / 1000, 2)
+
+
+def calculate_suitability(wind_speed_mph):
+    # 0-100 score: optimal range 7-55 mph
+    # below 7 → insufficient, above 55 → dangerous
+    if wind_speed_mph < 7:
+        return 0
+    elif wind_speed_mph > 55:
+        return 0
+    else:
+        return min(100, int(wind_speed_mph * 4))
+
+def write_to_timescale(conn, message):
+    data = message.value
+    wind_speed_mph = data.get("wind_speed_mph", 0.0)
+    wind_power_index = calculate_wind_power(wind_speed_mph)
+    suitability_score = calculate_suitability(wind_speed_mph)
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO weather_forecasts
+                    (time, name, temperature, temperature_unit,
+                     wind_speed, wind_direction, short_forecast, is_daytime,
+                     wind_speed_mph, wind_power_index, suitability_score)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    data.get("startTime"),
+                    data.get("name"),
+                    data.get("temperature"),
+                    data.get("temperatureUnit"),
+                    data.get("windSpeed"),
+                    data.get("windDirection"),
+                    data.get("shortForecast"),
+                    data.get("isDaytime"),
+                    wind_speed_mph,
+                    wind_power_index,
+                    suitability_score,
+                ),
+            )
+        conn.commit()
+        TIMESCALE_WRITES.inc()
+        print(
+            f"Written to TimescaleDB: {data.get('name')} "
+            f"wind={wind_speed_mph}mph power={wind_power_index}kW score={suitability_score}",
+            flush=True,
+        )
+    except Exception as e:
+        conn.rollback()
+        TIMESCALE_ERRORS.inc()
+        print(f"TimescaleDB write error: {e}", flush=True)
 
 def main():
     consumer = create_consumer()
     dlq_producer = create_dlq_producer()
     minio_client = create_minio_client()
     ensure_bucket(minio_client)
+    timescale_conn = create_timescale_conn()
     print("Waiting for messages...\n", flush=True)
 
     for message in consumer:
@@ -160,6 +244,7 @@ def main():
             MESSAGES_CONSUMED.inc()
             update_lag(consumer)
             write_to_minio(minio_client, message)
+            write_to_timescale(timescale_conn, message)
         except Exception as e:
             CONSUMER_ERRORS.inc()
             print(f"Error processing message: {e}", flush=True)

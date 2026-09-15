@@ -67,14 +67,29 @@ def create_producer():
     wait=wait_exponential(multiplier=1, min=2, max=30),  # 2s, 4s, 8s... up to 30s
     stop=stop_after_attempt(5),
 )
+
+def parse_wind_speed(wind_speed_str):
+    # "5 to 15 mph" → 10.0
+    # "15 mph" → 15.0
+    import re
+    numbers = re.findall(r'\d+', wind_speed_str or "0")
+    if len(numbers) == 2:
+        return (int(numbers[0]) + int(numbers[1])) / 2
+    elif len(numbers) == 1:
+        return float(numbers[0])
+    return 0.0
+
 def fetch_weather_data():
-    # raises exception after 5 failed attempts
     WEATHER_REQUESTS.inc()
     headers = {"User-Agent": WEATHER_API_USER_AGENT}
     response = requests.get(WEATHER_API_URL, headers=headers, timeout=API_TIMEOUT)
-    response.raise_for_status()  # raises HTTPError on 4xx/5xx
+    response.raise_for_status()
     data = response.json()
-    return data["properties"]["periods"]
+    periods = data["properties"]["periods"]
+    # add numeric wind speed to each period
+    for period in periods:
+        period["wind_speed_mph"] = parse_wind_speed(period.get("windSpeed", "0"))
+    return periods
 
 
 def send_message(producer, message):
@@ -96,7 +111,6 @@ def send_message(producer, message):
     except KafkaError as e:
         KAFKA_SEND_ERRORS.inc()
         print(f"Kafka send error: {e}", flush=True)
-
 
 def main():
     producer = create_producer()
