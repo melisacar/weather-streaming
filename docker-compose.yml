@@ -136,7 +136,22 @@ services:
     command: server /data --console-address ":9001"
     restart: unless-stopped
 
+  timescaledb:
+    image: timescale/timescaledb:latest-pg16
+    container_name: timescaledb
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: "${TIMESCALE_USER}"
+      POSTGRES_PASSWORD: "${TIMESCALE_PASSWORD}"
+      POSTGRES_DB: "${TIMESCALE_DB}"
+    volumes:
+      - timescaledb_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    restart: unless-stopped
+
 volumes:
   kafka_data:
   grafana_data:
   minio_data:
+  timescaledb_data:

@@ -7,3 +7,4 @@ jsonschema
 pytest
 pytest-mock
 boto3
+psycopg2-binary
