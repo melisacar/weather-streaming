@@ -8,7 +8,9 @@ A production-grade real-time data streaming pipeline that ingests weather foreca
 
 ## Architecture
 
-![Architecture](docs/architecture.png)
+<p align="center">
+  <img src="docs/architecture.png" alt="Architecture" width="800"/>
+</p>
 
 ---
 
