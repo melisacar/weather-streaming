@@ -10,7 +10,6 @@ from dotenv import load_dotenv
 from kafka import KafkaConsumer, KafkaProducer, TopicPartition
 from kafka.errors import KafkaError
 from prometheus_client import Counter, Gauge, start_http_server
-from psycopg2.extras import execute_values
 
 load_dotenv()
 

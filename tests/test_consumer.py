@@ -269,7 +269,7 @@ def test_calculate_suitability_max_100():
 
 def test_write_to_timescale_success():
     # successful write should increment TIMESCALE_WRITES counter
-    from src.consumer.consumer import write_to_timescale, TIMESCALE_WRITES
+    from src.consumer.consumer import TIMESCALE_WRITES, write_to_timescale
 
     mock_conn = MagicMock()
     mock_cursor = MagicMock()
@@ -286,7 +286,7 @@ def test_write_to_timescale_success():
 
 def test_write_to_timescale_error_rolls_back():
     # failed write should rollback and increment error counter
-    from src.consumer.consumer import write_to_timescale, TIMESCALE_ERRORS
+    from src.consumer.consumer import TIMESCALE_ERRORS, write_to_timescale
 
     mock_conn = MagicMock()
     mock_cursor = MagicMock()
