@@ -211,3 +211,106 @@ def test_ensure_bucket_skips_if_exists():
     ensure_bucket(mock_client)
 
     mock_client.create_bucket.assert_not_called()
+
+def test_calculate_wind_power_zero_wind():
+    # zero wind speed should return zero power
+    from src.consumer.consumer import calculate_wind_power
+
+    result = calculate_wind_power(0)
+    assert result == 0.0
+
+
+def test_calculate_wind_power_positive():
+    # positive wind speed should return positive power
+    from src.consumer.consumer import calculate_wind_power
+
+    result = calculate_wind_power(10)
+    assert result > 0
+
+
+def test_calculate_wind_power_increases_with_speed():
+    # higher wind speed should produce more power (cubic relationship)
+    from src.consumer.consumer import calculate_wind_power
+
+    assert calculate_wind_power(20) > calculate_wind_power(10)
+
+
+def test_calculate_suitability_too_low():
+    # wind speed below 7 mph should return 0
+    from src.consumer.consumer import calculate_suitability
+
+    assert calculate_suitability(5) == 0
+    assert calculate_suitability(0) == 0
+
+
+def test_calculate_suitability_too_high():
+    # wind speed above 55 mph should return 0 — dangerous for turbines
+    from src.consumer.consumer import calculate_suitability
+
+    assert calculate_suitability(60) == 0
+    assert calculate_suitability(100) == 0
+
+
+def test_calculate_suitability_optimal():
+    # wind speed in 7-55 mph range should return positive score
+    from src.consumer.consumer import calculate_suitability
+
+    assert calculate_suitability(15) > 0
+    assert calculate_suitability(25) > 0
+
+
+def test_calculate_suitability_max_100():
+    # score should never exceed 100
+    from src.consumer.consumer import calculate_suitability
+
+    assert calculate_suitability(30) <= 100
+    assert calculate_suitability(50) <= 100
+
+
+def test_write_to_timescale_success():
+    # successful write should increment TIMESCALE_WRITES counter
+    from src.consumer.consumer import write_to_timescale, TIMESCALE_WRITES
+
+    mock_conn = MagicMock()
+    mock_cursor = MagicMock()
+    mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
+    mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+
+    before = TIMESCALE_WRITES._value.get()
+    write_to_timescale(mock_conn, FAKE_MESSAGE)
+    after = TIMESCALE_WRITES._value.get()
+
+    assert after == before + 1
+    mock_conn.commit.assert_called_once()
+
+
+def test_write_to_timescale_error_rolls_back():
+    # failed write should rollback and increment error counter
+    from src.consumer.consumer import write_to_timescale, TIMESCALE_ERRORS
+
+    mock_conn = MagicMock()
+    mock_cursor = MagicMock()
+    mock_cursor.execute.side_effect = Exception("DB error")
+    mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
+    mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+
+    before = TIMESCALE_ERRORS._value.get()
+    write_to_timescale(mock_conn, FAKE_MESSAGE)
+    after = TIMESCALE_ERRORS._value.get()
+
+    assert after == before + 1
+    mock_conn.rollback.assert_called_once()
+
+
+def test_write_to_timescale_does_not_raise():
+    # DB error should not crash the consumer
+    from src.consumer.consumer import write_to_timescale
+
+    mock_conn = MagicMock()
+    mock_cursor = MagicMock()
+    mock_cursor.execute.side_effect = Exception("DB error")
+    mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
+    mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+
+    write_to_timescale(mock_conn, FAKE_MESSAGE)
+    # should not raise
