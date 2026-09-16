@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import time
 from datetime import datetime, timezone
@@ -10,6 +11,7 @@ from dotenv import load_dotenv
 from kafka import KafkaConsumer, KafkaProducer, TopicPartition
 from kafka.errors import KafkaError
 from prometheus_client import Counter, Gauge, start_http_server
+from pythonjsonlogger import jsonlogger
 
 load_dotenv()
 
@@ -30,22 +32,25 @@ TIMESCALE_DB = os.getenv("TIMESCALE_DB", "weather")
 
 start_http_server(CONSUMER_PORT)
 
-MESSAGES_CONSUMED = Counter(
-    "consumer_messages_consumed_total", "Total messages consumed"
+logger = logging.getLogger("consumer")
+handler = logging.StreamHandler()
+handler.setFormatter(
+    jsonlogger.JsonFormatter("%(asctime)s %(name)s %(levelname)s %(message)s")
 )
+logger.addHandler(handler)
+logger.setLevel(logging.INFO)
+
+MESSAGES_CONSUMED = Counter("consumer_messages_consumed_total", "Total messages consumed")
 CONSUMER_ERRORS = Counter("consumer_errors_total", "Total consumer errors")
-CONSUMER_LAG = Gauge(
-    "consumer_lag", "Consumer lag per partition", ["topic", "partition"]
-)
+CONSUMER_LAG = Gauge("consumer_lag", "Consumer lag per partition", ["topic", "partition"])
 DLQ_MESSAGES = Counter("consumer_dlq_messages_total", "Total messages sent to DLQ")
 MINIO_WRITES = Counter("consumer_minio_writes_total", "Total messages written to MinIO")
 MINIO_ERRORS = Counter("consumer_minio_errors_total", "Failed MinIO write attempts")
-
 TIMESCALE_WRITES = Counter("consumer_timescale_writes_total", "Total rows written to TimescaleDB")
 TIMESCALE_ERRORS = Counter("consumer_timescale_errors_total", "Failed TimescaleDB write attempts")
 
+
 def create_consumer():
-    # retry connecting to Kafka broker on startup
     while True:
         try:
             consumer = KafkaConsumer(
@@ -56,10 +61,10 @@ def create_consumer():
                 group_id=GROUP_ID,
                 value_deserializer=lambda x: json.loads(x.decode("utf-8")),
             )
-            print("Kafka consumer connected.", flush=True)
+            logger.info("Kafka consumer connected")
             return consumer
         except KafkaError as e:
-            print(f"Kafka not ready, retrying in 5s: {e}", flush=True)
+            logger.warning("Kafka not ready, retrying in 5s", extra={"error": str(e)})
             time.sleep(5)
 
 
@@ -70,10 +75,10 @@ def create_dlq_producer():
                 bootstrap_servers=KAFKA_BROKERS,
                 value_serializer=lambda v: json.dumps(v).encode("utf-8"),
             )
-            print("DLQ producer connected", flush=True)
+            logger.info("DLQ producer connected")
             return producer
         except KafkaError as e:
-            print(f"DLQ producer not ready, retrying in 5s: {e}", flush=True)
+            logger.warning("DLQ producer not ready, retrying in 5s", extra={"error": str(e)})
             time.sleep(5)
 
 
@@ -90,9 +95,9 @@ def send_to_dlq(dlq_producer, message, error):
         future = dlq_producer.send(DLQ_TOPIC, dlq_payload)
         future.get(timeout=10)
         DLQ_MESSAGES.inc()
-        print(f"Sent to DLQ: {dlq_payload}", flush=True)
+        logger.info("Message sent to DLQ", extra={"offset": message.offset, "error": str(error)})
     except Exception as e:
-        print(f"Failed to send to DLQ: {e}", flush=True)
+        logger.error("Failed to send to DLQ", extra={"error": str(e)})
 
 
 def update_lag(consumer):
@@ -107,16 +112,19 @@ def update_lag(consumer):
             lag = end_offsets[tp] - current_offset
             CONSUMER_LAG.labels(topic=TOPIC, partition=p).set(lag)
     except Exception as e:
-        print(f"Lag calculation error: {e}", flush=True)
+        logger.error("Lag calculation error", extra={"error": str(e)})
 
 
 def process_message(message):
     data = message.value
-    print(
-        f"[{message.timestamp}] {data['startTime']} → "
-        f"{data['temperature']}°{data['temperatureUnit']}, "
-        f"{data['shortForecast']}",
-        flush=True,
+    logger.info(
+        "Message received",
+        extra={
+            "start_time": data["startTime"],
+            "temperature": data["temperature"],
+            "unit": data["temperatureUnit"],
+            "forecast": data["shortForecast"],
+        },
     )
 
 
@@ -134,11 +142,10 @@ def ensure_bucket(client):
         client.head_bucket(Bucket=MINIO_BUCKET)
     except ClientError:
         client.create_bucket(Bucket=MINIO_BUCKET)
-        print(f"Bucket '{MINIO_BUCKET}' created.", flush=True)
+        logger.info("Bucket created", extra={"bucket": MINIO_BUCKET})
 
 
 def write_to_minio(client, message):
-    # store raw message as JSON under raw/YYYY/MM/DD/HH/offset.json
     now = datetime.now(timezone.utc)
     key = f"raw/{now.strftime('%Y/%m/%d/%H')}/{message.partition}-{message.offset}.json"
     try:
@@ -149,13 +156,13 @@ def write_to_minio(client, message):
             ContentType="application/json",
         )
         MINIO_WRITES.inc()
-        print(f"Written to MinIO: {key}", flush=True)
+        logger.info("Written to MinIO", extra={"key": key})
     except Exception as e:
         MINIO_ERRORS.inc()
-        print(f"MinIO write error: {e}", flush=True)
+        logger.error("MinIO write error", extra={"error": str(e)})
+
 
 def create_timescale_conn():
-    # retry connecting to TimescaleDB on startup
     while True:
         try:
             conn = psycopg2.connect(
@@ -165,28 +172,26 @@ def create_timescale_conn():
                 password=TIMESCALE_PASSWORD,
                 dbname=TIMESCALE_DB,
             )
-            print("TimescaleDB connected.", flush=True)
+            logger.info("TimescaleDB connected")
             return conn
         except Exception as e:
-            print(f"TimescaleDB not ready, retrying in 5s: {e}", flush=True)
+            logger.warning("TimescaleDB not ready, retrying in 5s", extra={"error": str(e)})
             time.sleep(5)
 
+
 def calculate_wind_power(wind_speed_mph):
-    # simplified wind power formula: P = 0.5 * rho * A * v^3
-    # rho = 1.225 kg/m3 (air density), A = 50 m2 (rotor area), converted to kW
     wind_speed_ms = wind_speed_mph * 0.44704
     return round(0.5 * 1.225 * 50 * wind_speed_ms**3 / 1000, 2)
 
 
 def calculate_suitability(wind_speed_mph):
-    # 0-100 score: optimal range 7-55 mph
-    # below 7 → insufficient, above 55 → dangerous
     if wind_speed_mph < 7:
         return 0
     elif wind_speed_mph > 55:
         return 0
     else:
         return min(100, int(wind_speed_mph * 4))
+
 
 def write_to_timescale(conn, message):
     data = message.value
@@ -219,15 +224,20 @@ def write_to_timescale(conn, message):
             )
         conn.commit()
         TIMESCALE_WRITES.inc()
-        print(
-            f"Written to TimescaleDB: {data.get('name')} "
-            f"wind={wind_speed_mph}mph power={wind_power_index}kW score={suitability_score}",
-            flush=True,
+        logger.info(
+            "Written to TimescaleDB",
+            extra={
+                "forecast_name": data.get("name"),
+                "wind_speed_mph": wind_speed_mph,
+                "wind_power_index": wind_power_index,
+                "suitability_score": suitability_score,
+            },
         )
     except Exception as e:
         conn.rollback()
         TIMESCALE_ERRORS.inc()
-        print(f"TimescaleDB write error: {e}", flush=True)
+        logger.error("TimescaleDB write error", extra={"error": str(e)})
+
 
 def main():
     consumer = create_consumer()
@@ -235,7 +245,7 @@ def main():
     minio_client = create_minio_client()
     ensure_bucket(minio_client)
     timescale_conn = create_timescale_conn()
-    print("Waiting for messages...\n", flush=True)
+    logger.info("Waiting for messages")
 
     for message in consumer:
         try:
@@ -246,7 +256,7 @@ def main():
             write_to_timescale(timescale_conn, message)
         except Exception as e:
             CONSUMER_ERRORS.inc()
-            print(f"Error processing message: {e}", flush=True)
+            logger.error("Error processing message", extra={"error": str(e)})
             send_to_dlq(dlq_producer, message, e)
 
 

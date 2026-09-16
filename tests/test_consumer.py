@@ -17,12 +17,12 @@ FAKE_MESSAGE.partition = 0
 FAKE_MESSAGE.offset = 42
 
 
-def test_process_message_prints_correctly(capsys):
-    # process_message should print temperature and forecast
-    process_message(FAKE_MESSAGE)
-    captured = capsys.readouterr()
-    assert "72" in captured.out
-    assert "Sunny" in captured.out
+def test_process_message_prints_correctly(caplog):
+    import logging
+    with caplog.at_level(logging.INFO):
+        process_message(FAKE_MESSAGE)
+    assert any(r.temperature == 72 for r in caplog.records)
+    assert any(r.forecast == "Sunny" for r in caplog.records)
 
 
 def test_process_message_missing_field_raises():

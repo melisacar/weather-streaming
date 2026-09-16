@@ -1,5 +1,7 @@
 import json
+import logging
 import os
+import re
 import time
 
 import requests
@@ -8,6 +10,7 @@ from jsonschema import ValidationError, validate
 from kafka import KafkaProducer
 from kafka.errors import KafkaError
 from prometheus_client import Counter, start_http_server
+from pythonjsonlogger import jsonlogger
 from tenacity import (
     retry,
     retry_if_exception_type,
@@ -32,6 +35,14 @@ SEND_INTERVAL = int(os.getenv("SEND_INTERVAL", "5"))
 
 start_http_server(PRODUCER_PORT)
 
+logger = logging.getLogger("producer")
+handler = logging.StreamHandler()
+handler.setFormatter(
+    jsonlogger.JsonFormatter("%(asctime)s %(name)s %(levelname)s %(message)s")
+)
+logger.addHandler(handler)
+logger.setLevel(logging.INFO)
+
 WEATHER_REQUESTS = Counter("weather_requests_total", "Total API requests")
 MESSAGES_SENT = Counter("producer_messages_sent_total", "Total messages sent to Kafka")
 WEATHER_REQUEST_ERRORS = Counter("weather_request_errors_total", "Failed API requests")
@@ -48,37 +59,35 @@ def create_producer():
             producer = KafkaProducer(
                 bootstrap_servers=KAFKA_BROKERS,
                 value_serializer=lambda v: json.dumps(v).encode("utf-8"),
-                acks="all",  # wait for all replicas to acknowledge
-                retries=5,  # retry failed sends up to 5 times
-                retry_backoff_ms=500,  # wait 500ms between retries
-                # enable_idempotence=True,    # not supported in kafka-python-ng on Python 3.9
+                acks="all",
+                retries=5,
+                retry_backoff_ms=500,
+                # enable_idempotence=True,  # not supported in kafka-python-ng on Python 3.9
             )
-            print("Kafka producer connected.", flush=True)
+            logger.info("Kafka producer connected")
             return producer
         except KafkaError as e:
-            print(f"Kafka not ready, retrying in 5s: {e}", flush=True)
+            logger.warning("Kafka not ready, retrying in 5s", extra={"error": str(e)})
             time.sleep(5)
 
 
-@retry(
-    retry=retry_if_exception_type(
-        (requests.exceptions.Timeout, requests.exceptions.ConnectionError)
-    ),
-    wait=wait_exponential(multiplier=1, min=2, max=30),  # 2s, 4s, 8s... up to 30s
-    stop=stop_after_attempt(5),
-)
-
 def parse_wind_speed(wind_speed_str):
-    # "5 to 15 mph" → 10.0
-    # "15 mph" → 15.0
-    import re
-    numbers = re.findall(r'\d+', wind_speed_str or "0")
+    # "5 to 15 mph" → 10.0, "15 mph" → 15.0
+    numbers = re.findall(r"\d+", wind_speed_str or "0")
     if len(numbers) == 2:
         return (int(numbers[0]) + int(numbers[1])) / 2
     elif len(numbers) == 1:
         return float(numbers[0])
     return 0.0
 
+
+@retry(
+    retry=retry_if_exception_type(
+        (requests.exceptions.Timeout, requests.exceptions.ConnectionError)
+    ),
+    wait=wait_exponential(multiplier=1, min=2, max=30),
+    stop=stop_after_attempt(5),
+)
 def fetch_weather_data():
     WEATHER_REQUESTS.inc()
     headers = {"User-Agent": WEATHER_API_USER_AGENT}
@@ -86,7 +95,6 @@ def fetch_weather_data():
     response.raise_for_status()
     data = response.json()
     periods = data["properties"]["periods"]
-    # add numeric wind speed to each period
     for period in periods:
         period["wind_speed_mph"] = parse_wind_speed(period.get("windSpeed", "0"))
     return periods
@@ -97,20 +105,25 @@ def send_message(producer, message):
         validate(instance=message, schema=WEATHER_SCHEMA)
     except ValidationError as e:
         VALIDATION_ERRORS.inc()
-        print(f"Message validation error: {e.message}", flush=True)
-        return  # skip invalid message, don't send to Kafka
+        logger.warning("Message validation failed", extra={"error": e.message})
+        return
 
     try:
         future = producer.send(TOPIC, message)
-        future.get(timeout=10)  # block until send confirmed or timeout
+        future.get(timeout=10)
         MESSAGES_SENT.inc()
-        print(
-            f"Sent: {message.get('name')} — {message.get('temperature')}°{message.get('temperatureUnit')}",
-            flush=True,
+        logger.info(
+            "Message sent",
+            extra={
+                "forecast_name": message.get("name"),
+                "temperature": message.get("temperature"),
+                "unit": message.get("temperatureUnit"),
+            },
         )
     except KafkaError as e:
         KAFKA_SEND_ERRORS.inc()
-        print(f"Kafka send error: {e}", flush=True)
+        logger.error("Kafka send error", extra={"error": str(e)})
+
 
 def main():
     producer = create_producer()
@@ -123,8 +136,10 @@ def main():
                 time.sleep(SEND_INTERVAL)
         except Exception as e:
             WEATHER_REQUEST_ERRORS.inc()
-            print(f"Failed to fetch weather data after retries: {e}", flush=True)
-            print("Waiting 60s before next attempt...", flush=True)
+            logger.error(
+                "Failed to fetch weather data after retries, waiting 60s",
+                extra={"error": str(e)},
+            )
             time.sleep(60)
 
         time.sleep(FETCH_INTERVAL)

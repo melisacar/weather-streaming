@@ -8,3 +8,4 @@ pytest
 pytest-mock
 boto3
 psycopg2-binary
+python-json-logger
