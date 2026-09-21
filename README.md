@@ -299,6 +299,8 @@ pytest
 - [x] GitHub Actions CI pipeline (lint + test)
 
 ### Planned
+
+- [ ] Great Expectations — data quality checks on TimescaleDB and Spark output
 - [ ] PySpark Structured Streaming for windowed aggregations
 - [ ] Apache Superset for wind energy business dashboard
 - [ ] Avro schema + Confluent Schema Registry
