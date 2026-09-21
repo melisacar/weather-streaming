@@ -49,6 +49,8 @@ services:
       dockerfile: Dockerfile.consumer
     depends_on:
       - kafka
+      - minio
+      - timescaledb
     ports:
       - "${CONSUMER_PORT}:${CONSUMER_PORT}"
     environment:
@@ -56,6 +58,16 @@ services:
       KAFKA_TOPIC: "${KAFKA_TOPIC}"
       GROUP_ID: "${GROUP_ID}"
       CONSUMER_PORT: "${CONSUMER_PORT}"
+      DLQ_TOPIC: "${DLQ_TOPIC}"
+      MINIO_ENDPOINT: "${MINIO_ENDPOINT}"
+      MINIO_BUCKET: "${MINIO_BUCKET}"
+      MINIO_ROOT_USER: "${MINIO_ROOT_USER}"
+      MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD}"
+      TIMESCALE_HOST: "${TIMESCALE_HOST}"
+      TIMESCALE_PORT: "${TIMESCALE_PORT}"
+      TIMESCALE_USER: "${TIMESCALE_USER}"
+      TIMESCALE_PASSWORD: "${TIMESCALE_PASSWORD}"
+      TIMESCALE_DB: "${TIMESCALE_DB}"
     restart: on-failure
 
   kafka-ui:
@@ -85,8 +97,6 @@ services:
     environment:
       - GF_SECURITY_ADMIN_USER=${GF_SECURITY_ADMIN_USER}
       - GF_SECURITY_ADMIN_PASSWORD=${GF_SECURITY_ADMIN_PASSWORD}
-      - TIMESCALE_USER=${TIMESCALE_USER}
-      - TIMESCALE_PASSWORD=${TIMESCALE_PASSWORD}
     volumes:
       - grafana_data:/var/lib/grafana
       - ./monitoring/provisioning/datasources:/etc/grafana/provisioning/datasources
@@ -94,7 +104,6 @@ services:
       - ./monitoring/dashboards:/var/lib/grafana/dashboards
     depends_on:
       - prometheus
-      - timescaledb
 
   node-exporter:
     image: prom/node-exporter:latest
@@ -152,6 +161,27 @@ services:
       - timescaledb_data:/var/lib/postgresql/data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
     restart: unless-stopped
+
+  spark-job:
+    build:
+      context: .
+      dockerfile: Dockerfile.spark
+    container_name: spark-job
+    environment:
+      - MINIO_ENDPOINT=${MINIO_ENDPOINT}
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
+      - MINIO_BUCKET=${MINIO_BUCKET}
+      - TIMESCALE_HOST=${TIMESCALE_HOST}
+      - TIMESCALE_PORT=${TIMESCALE_PORT}
+      - TIMESCALE_USER=${TIMESCALE_USER}
+      - TIMESCALE_PASSWORD=${TIMESCALE_PASSWORD}
+      - TIMESCALE_DB=${TIMESCALE_DB}
+    depends_on:
+      - minio
+      - timescaledb
+    profiles:
+      - spark
 
 volumes:
   kafka_data:

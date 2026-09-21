@@ -1,0 +1,26 @@
+FROM python:3.9
+
+RUN apt-get update && apt-get install -y default-jdk && \
+    apt-get clean
+
+ENV JAVA_HOME=/usr/lib/jvm/default-java
+
+COPY spark-3.5.1-bin-hadoop3.tgz /tmp/
+RUN tar -xzf /tmp/spark-3.5.1-bin-hadoop3.tgz -C /opt/ && \
+    mv /opt/spark-3.5.1-bin-hadoop3 /opt/spark && \
+    rm /tmp/spark-3.5.1-bin-hadoop3.tgz
+
+ENV SPARK_HOME=/opt/spark
+ENV PATH=$PATH:$SPARK_HOME/bin
+
+RUN wget -P /opt/spark/jars/ \
+    https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/3.3.4/hadoop-aws-3.3.4.jar \
+    https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-bundle/1.12.262/aws-java-sdk-bundle-1.12.262.jar \
+    https://repo1.maven.org/maven2/org/postgresql/postgresql/42.6.0/postgresql-42.6.0.jar
+
+RUN pip install pyspark==3.5.1 boto3 psycopg2-binary python-dotenv
+
+WORKDIR /app
+COPY spark/weather_aggregation.py .
+
+CMD ["python", "weather_aggregation.py"]
