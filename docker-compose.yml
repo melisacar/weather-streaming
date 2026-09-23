@@ -183,6 +183,19 @@ services:
     profiles:
       - spark
 
+  superset:
+    build:
+      context: .
+      dockerfile: Dockerfile.superset
+    container_name: superset
+    ports:
+      - "8088:8088"
+    environment:
+      - SUPERSET_SECRET_KEY=your_secret_key_here
+    depends_on:
+      - timescaledb
+    restart: unless-stopped
+
 volumes:
   kafka_data:
   grafana_data:
