@@ -279,6 +279,7 @@ pytest
 ## Roadmap
 
 ### Done
+
 - [x] Kafka producer fetching from Weather.gov API
 - [x] Kafka consumer reading messages
 - [x] Apache Kafka in KRaft mode (no Zookeeper)
@@ -297,12 +298,13 @@ pytest
 - [x] Structured JSON logging with python-json-logger
 - [x] pytest unit tests (38 tests)
 - [x] GitHub Actions CI pipeline (lint + test)
+- [x] PySpark batch aggregation — hourly wind energy metrics from MinIO to TimescaleDB
+- [x] Apache Superset for wind energy business dashboard
 
 ### Planned
 
 - [ ] Great Expectations — data quality checks on TimescaleDB and Spark output
-- [ ] PySpark Structured Streaming for windowed aggregations
-- [ ] Apache Superset for wind energy business dashboard
+- [ ] Anomaly detection — ML-based wind speed anomaly flagging
 - [ ] Avro schema + Confluent Schema Registry
 - [ ] GitHub Actions CD pipeline (build + deploy)
 - [ ] Kubernetes deployment (Helm charts)
