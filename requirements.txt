@@ -10,3 +10,4 @@ boto3
 psycopg2-binary
 python-json-logger
 great-expectations
+sqlalchemy
