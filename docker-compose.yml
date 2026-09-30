@@ -22,10 +22,18 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
       KAFKA_DEFAULT_REPLICATION_FACTOR: "${REPLICATION_FACTOR}"
       KAFKA_OPTS: "-javaagent:/jmx_prometheus_javaagent.jar=7071:/jmx_config.yml"
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
     volumes:
       - kafka_data:/var/lib/kafka/data
       - ./monitoring/jmx_prometheus_javaagent.jar:/jmx_prometheus_javaagent.jar
       - ./monitoring/jmx_config.yml:/jmx_config.yml
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 9092"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
 
   weather-production:
     build:
@@ -195,6 +203,23 @@ services:
     depends_on:
       - timescaledb
     restart: unless-stopped
+  
+  schema-registry:
+    image: confluentinc/cp-schema-registry:7.6.0
+    container_name: schema-registry
+    ports:
+      - "8081:8081"
+    environment:
+      SCHEMA_REGISTRY_HOST_NAME: "schema-registry"
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: "PLAINTEXT://kafka:9092"
+      SCHEMA_REGISTRY_LISTENERS: "http://0.0.0.0:8081"
+      SCHEMA_REGISTRY_KAFKASTORE_SECURITY_PROTOCOL: "PLAINTEXT"
+      SCHEMA_REGISTRY_KAFKASTORE_TOPIC_REPLICATION_FACTOR: "1"
+      SCHEMA_REGISTRY_KAFKASTORE_INIT_TIMEOUT_MS: "120000"
+    depends_on:
+      kafka:
+        condition: service_healthy
+    restart: on-failure
 
 volumes:
   kafka_data:

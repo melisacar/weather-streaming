@@ -11,3 +11,5 @@ psycopg2-binary
 python-json-logger
 great-expectations
 sqlalchemy
+confluent-kafka[avro]
+fastavro

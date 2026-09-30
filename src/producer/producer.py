@@ -1,14 +1,16 @@
-import json
+import json as json_lib
 import logging
 import os
 import re
 import time
 
 import requests
+from confluent_kafka import Producer as ConfluentProducer
+from confluent_kafka.schema_registry import SchemaRegistryClient
+from confluent_kafka.schema_registry.avro import AvroSerializer
+from confluent_kafka.serialization import MessageField, SerializationContext
 from dotenv import load_dotenv
 from jsonschema import ValidationError, validate
-from kafka import KafkaProducer
-from kafka.errors import KafkaError
 from prometheus_client import Counter, start_http_server
 from pythonjsonlogger import jsonlogger
 from tenacity import (
@@ -19,6 +21,7 @@ from tenacity import (
 )
 
 from src.producer.schema import WEATHER_SCHEMA
+from src.producer.schema_avro import WEATHER_AVRO_SCHEMA
 
 load_dotenv()
 
@@ -32,6 +35,7 @@ WEATHER_API_USER_AGENT = os.getenv("WEATHER_API_USER_AGENT", "myweatherapp.com")
 API_TIMEOUT = int(os.getenv("API_TIMEOUT", "10"))
 FETCH_INTERVAL = int(os.getenv("FETCH_INTERVAL", "300"))
 SEND_INTERVAL = int(os.getenv("SEND_INTERVAL", "5"))
+SCHEMA_REGISTRY_URL = os.getenv("SCHEMA_REGISTRY_URL", "http://schema-registry:8081")
 
 start_http_server(PRODUCER_PORT)
 
@@ -56,17 +60,15 @@ def create_producer():
     # retry connecting to Kafka broker on startup — broker may not be ready yet
     while True:
         try:
-            producer = KafkaProducer(
-                bootstrap_servers=KAFKA_BROKERS,
-                value_serializer=lambda v: json.dumps(v).encode("utf-8"),
-                acks="all",
-                retries=5,
-                retry_backoff_ms=500,
-                # enable_idempotence=True,  # not supported in kafka-python-ng on Python 3.9
+            schema_registry_client = SchemaRegistryClient({"url": SCHEMA_REGISTRY_URL})
+            avro_serializer = AvroSerializer(
+                schema_registry_client,
+                json_lib.dumps(WEATHER_AVRO_SCHEMA),
             )
+            producer = ConfluentProducer({"bootstrap.servers": KAFKA_BROKERS})
             logger.info("Kafka producer connected")
-            return producer
-        except KafkaError as e:
+            return producer, avro_serializer
+        except Exception as e:
             logger.warning("Kafka not ready, retrying in 5s", extra={"error": str(e)})
             time.sleep(5)
 
@@ -100,7 +102,7 @@ def fetch_weather_data():
     return periods
 
 
-def send_message(producer, message):
+def send_message(producer, avro_serializer, message):
     try:
         validate(instance=message, schema=WEATHER_SCHEMA)
     except ValidationError as e:
@@ -109,8 +111,14 @@ def send_message(producer, message):
         return
 
     try:
-        future = producer.send(TOPIC, message)
-        future.get(timeout=10)
+        producer.produce(
+            topic=TOPIC,
+            value=avro_serializer(
+                message,
+                SerializationContext(TOPIC, MessageField.VALUE),
+            ),
+        )
+        producer.flush()
         MESSAGES_SENT.inc()
         logger.info(
             "Message sent",
@@ -120,19 +128,19 @@ def send_message(producer, message):
                 "unit": message.get("temperatureUnit"),
             },
         )
-    except KafkaError as e:
+    except Exception as e:
         KAFKA_SEND_ERRORS.inc()
         logger.error("Kafka send error", extra={"error": str(e)})
 
 
 def main():
-    producer = create_producer()
+    producer, avro_serializer = create_producer()
 
     while True:
         try:
             periods = fetch_weather_data()
             for item in periods:
-                send_message(producer, item)
+                send_message(producer, avro_serializer, item)
                 time.sleep(SEND_INTERVAL)
         except Exception as e:
             WEATHER_REQUEST_ERRORS.inc()
