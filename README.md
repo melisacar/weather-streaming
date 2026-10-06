@@ -19,15 +19,20 @@ A production-grade real-time data streaming pipeline that ingests weather foreca
 | Layer | Technology | Purpose |
 |---|---|---|
 | Message Broker | Apache Kafka 7.6 (KRaft) | Event streaming without Zookeeper |
-| Producer | Python + kafka-python-ng | Fetches API data, publishes to Kafka |
-| Consumer | Python + kafka-python-ng | Reads messages, writes to MinIO and TimescaleDB |
+| Message Format | Avro + Confluent Schema Registry | Binary serialization with schema versioning |
+| Producer | Python + confluent-kafka | Fetches API data, Avro serialization, publishes to Kafka |
+| Consumer | Python + confluent-kafka | Reads messages, writes to MinIO and TimescaleDB |
 | Data Lake | MinIO (S3-compatible) | Raw JSON message storage, partitioned by time |
 | Time-series DB | TimescaleDB (PostgreSQL) | Structured weather data with wind energy metrics |
+| Batch Processing | PySpark 3.5 | Hourly aggregations from MinIO to TimescaleDB |
+| Business Intelligence | Apache Superset | Wind energy business dashboard |
+| Data Quality | Great Expectations | Automated data validation on TimescaleDB |
+| Anomaly Detection | scikit-learn (Isolation Forest) | Wind speed anomaly flagging |
 | Schema Validation | jsonschema | Validates message format before publishing |
 | Retry | tenacity | Exponential backoff for API and Kafka failures |
 | Dead Letter Queue | Kafka topic | Failed messages stored for inspection |
 | Metrics | Prometheus | Scrapes and stores metrics from all services |
-| Dashboards | Grafana 9.5 | Visualizes pipeline health and performance |
+| Dashboards | Grafana 9.5 | Visualizes pipeline health and performance (21 panels) |
 | Broker Metrics | JMX Exporter | Exposes Kafka internal JMX metrics to Prometheus |
 | Host Metrics | Node Exporter | CPU, memory, disk of the host machine |
 | Container Metrics | cAdvisor | Per-container resource usage |
@@ -46,12 +51,19 @@ A production-grade real-time data streaming pipeline that ingests weather foreca
 weather-streaming/
   src/
     producer/
-      producer.py          # fetches forecasts, parses wind speed, publishes to Kafka
-      schema.py            # JSON Schema definition for weather messages
+      producer.py          # fetches forecasts, parses wind speed, Avro serialization
+      schema.py            # JSON Schema definition for message validation
+      schema_avro.py       # Avro schema definition for Confluent Schema Registry
     consumer/
-      consumer.py          # consumes messages, writes to MinIO and TimescaleDB
+      consumer.py          # Avro deserialization, writes to MinIO and TimescaleDB
   setup/
     topics.py              # creates Kafka topics (weather-data, weather-data.dlq)
+  spark/
+    weather_aggregation.py # PySpark batch job — hourly aggregations from MinIO
+  ml/
+    anomaly_detection.py   # Isolation Forest anomaly detection on hourly aggregates
+  great_expectations/
+    validate.py            # data quality checks on TimescaleDB
   monitoring/
     dashboards/
       kafka_grafana.json   # Grafana dashboard (21 panels, auto-provisioned)
@@ -68,6 +80,8 @@ weather-streaming/
     test_schema.py         # unit tests for JSON schema validation
   Dockerfile               # producer container image
   Dockerfile.consumer      # consumer container image
+  Dockerfile.spark         # PySpark job container image
+  Dockerfile.superset      # Superset container image with PostgreSQL driver
   docker-compose.yml       # full stack orchestration
   requirements.txt         # Python dependencies
   ruff.toml                # ruff linter config
@@ -80,10 +94,11 @@ weather-streaming/
 ## What Each Component Does
 
 ### Producer (`src/producer/producer.py`)
-Fetches 7-day weather forecast data from the National Weather Service API every 5 minutes. Parses wind speed strings into numeric values (`"5 to 15 mph"` → `10.0`). Validates each message against JSON Schema before publishing. Each forecast period is serialized as JSON and published as a separate Kafka message. Exposes Prometheus metrics on port 8000. Uses tenacity for exponential backoff on API failures.
+Fetches 7-day weather forecast data from the National Weather Service API every 5 minutes. Parses wind speed strings into numeric values (`"5 to 15 mph"` → `10.0`). Validates each message against JSON Schema before publishing. Serializes messages in Avro format via Confluent Schema Registry. Exposes Prometheus metrics on port 8000. Uses tenacity for exponential backoff on API failures.
 
 ### Consumer (`src/consumer/consumer.py`)
-Reads messages from the `weather-data` Kafka topic. For each message:
+Reads Avro-encoded messages from the `weather-data` Kafka topic. For each message:
+- Deserializes Avro payload using Confluent Schema Registry
 - Writes raw JSON to MinIO under `raw/YYYY/MM/DD/HH/partition-offset.json`
 - Calculates wind power index and turbine suitability score
 - Writes structured data to TimescaleDB
@@ -92,14 +107,19 @@ Reads messages from the `weather-data` Kafka topic. For each message:
 
 All logs are structured JSON via `python-json-logger`.
 
+### Schema Registry (`schema-registry`)
+Confluent Schema Registry stores and versions Avro schemas. Producer registers the weather forecast schema on first run. Consumer retrieves the schema to deserialize messages. Enables schema evolution — new fields can be added without breaking existing consumers.
+
 ### Wind Energy Use Case
 The pipeline evaluates weather forecast data for wind turbine suitability:
 - **Wind Power Index** — estimated power output using `P = 0.5 × ρ × A × v³`
 - **Suitability Score** — 0-100 score based on wind speed range (optimal: 7-55 mph)
 - Beverly Hills, CA (current location) consistently scores 0 — demonstrating the pipeline correctly identifies unsuitable turbine sites
 
+> Wind energy assessment using forecast data combines numerical weather predictions with machine learning models to estimate future power generation and optimize grid integration. In production, this pipeline would be extended with historical reanalysis datasets (ERA5, MERRA-2), real-time SCADA feeds, and ML models for power curve optimization.
+
 ### Kafka (KRaft mode)
-Runs without Zookeeper. Topics created programmatically via admin client on startup. Two topics: `weather-data` (main) and `weather-data.dlq` (failed messages).
+Runs without Zookeeper. Topics created programmatically via admin client on startup. Two topics: `weather-data` (main) and `weather-data.dlq` (failed messages). Healthcheck configured to ensure Schema Registry only starts after Kafka is ready.
 
 ### MinIO (Data Lake)
 S3-compatible object storage. Raw messages stored as partitioned JSON files:
@@ -109,9 +129,33 @@ weather-raw/raw/2026/09/16/12/0-1234.json
 AWS S3-compatible API — switchable to real S3 by changing endpoint URL.
 
 ### TimescaleDB
-PostgreSQL with TimescaleDB extension. Hypertable partitioned on `time` column. Stores:
-- Weather forecast data (temperature, wind, forecast)
-- Computed wind energy metrics (wind_speed_mph, wind_power_index, suitability_score)
+PostgreSQL with TimescaleDB extension. Hypertable partitioned on `time` column. Two tables:
+- `weather_forecasts` — raw structured data with wind energy metrics
+- `weather_hourly_aggregates` — hourly aggregations produced by Spark
+
+### PySpark Batch Job (`spark/weather_aggregation.py`)
+Reads raw JSON files from MinIO, computes hourly aggregations (average wind speed, max wind speed, average temperature), and writes results to `weather_hourly_aggregates` in TimescaleDB. Implements the **batch layer** of a Lambda Architecture alongside the real-time streaming layer.
+
+```bash
+docker compose --profile spark run spark-job
+```
+
+### Apache Superset
+Open-source BI tool connected to TimescaleDB. Used for wind energy business dashboards — visualizing hourly wind power index, suitability scores, and temperature trends. Available at `http://localhost:8088`.
+
+### Great Expectations (`great_expectations/validate.py`)
+Validates data quality in TimescaleDB. Checks temperature bounds (-50 to 130°F), wind speed ranges (0-200 mph), suitability score limits (0-100), and null values.
+
+```bash
+python great_expectations/validate.py
+```
+
+### Anomaly Detection (`ml/anomaly_detection.py`)
+Uses scikit-learn's Isolation Forest to detect anomalous wind speed patterns in hourly aggregates. Flags records where wind behavior deviates significantly from historical norms.
+
+```bash
+python ml/anomaly_detection.py
+```
 
 ### Observability Stack
 - **JMX Exporter** — Kafka broker internals to Prometheus
@@ -180,11 +224,12 @@ All 10 services should be up: kafka, weather-production, weather-consumer, kafka
 | Grafana | http://localhost:3000 | admin / admin |
 | Prometheus | http://localhost:9090 | — |
 | MinIO Console | http://localhost:9001 | minioadmin / minioadmin |
+| Schema Registry | http://localhost:8081 | — |
+| Superset | http://localhost:8088 | admin / admin |
 | Producer metrics | http://localhost:8000/metrics | — |
 | Consumer metrics | http://localhost:8001/metrics | — |
 | cAdvisor | http://localhost:8085 | — |
 | Node Exporter | http://localhost:9100/metrics | — |
-
 ---
 
 ## Data Source
@@ -300,12 +345,12 @@ pytest
 - [x] GitHub Actions CI pipeline (lint + test)
 - [x] PySpark batch aggregation — hourly wind energy metrics from MinIO to TimescaleDB
 - [x] Apache Superset for wind energy business dashboard
+- [x] Avro schema + Confluent Schema Registry
+- [x] Great Expectations — data quality checks on TimescaleDB and Spark output
+- [x] Anomaly detection — ML-based wind speed anomaly flagging
 
 ### Planned
 
-- [ ] Great Expectations — data quality checks on TimescaleDB and Spark output
-- [ ] Anomaly detection — ML-based wind speed anomaly flagging
-- [ ] Avro schema + Confluent Schema Registry
 - [ ] GitHub Actions CD pipeline (build + deploy)
 - [ ] Kubernetes deployment (Helm charts)
 - [ ] Terraform for infrastructure management
@@ -319,13 +364,17 @@ pytest
 - Grafana dashboard and datasource provisioned automatically — `docker compose down -v` safe
 - Weather.gov API is free, no rate limits documented, no API key required
 - MinIO is S3-compatible — switch to AWS S3 by changing `MINIO_ENDPOINT` in `.env`
+- Schema Registry requires Kafka to be healthy before starting — a healthcheck is configured on the Kafka service
+- Confluent Schema Registry runs in KRaft combined mode for local development. In production, use Confluent Cloud or isolated KRaft mode
+- Spark binary must be downloaded manually before building the spark-job image — download `spark-3.5.1-bin-hadoop3.tgz` from https://archive.apache.org/dist/spark/spark-3.5.1/ and place it in the project root. In production this would run on AWS EMR or Databricks
+- Python 3.12+ requires `kafka-python-ng` instead of `kafka-python`. Docker uses Python 3.9 so `requirements.txt` stays as-is. For local test runs:
+```
+pip uninstall kafka-python -y
+pip install kafka-python-ng
+```
 - To generate a fresh Kafka Cluster ID:
 ```
 python -c "import uuid, base64; print(base64.b64encode(uuid.uuid4().bytes).decode())"
-```
-- Python 3.12+ requires `kafka-python-ng` instead of `kafka-python`. Docker uses Python 3.9 so `requirements.txt` stays as-is. For local test runs:
-```
-pip install kafka-python-ng
 ```
 
 ## Contributing
