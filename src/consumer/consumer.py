@@ -12,7 +12,7 @@ from confluent_kafka.schema_registry import SchemaRegistryClient
 from confluent_kafka.schema_registry.avro import AvroDeserializer
 from confluent_kafka.serialization import MessageField, SerializationContext
 from dotenv import load_dotenv
-from kafka import KafkaConsumer, KafkaProducer, TopicPartition
+from kafka import KafkaProducer
 from kafka.errors import KafkaError
 from prometheus_client import Counter, Gauge, start_http_server
 from pythonjsonlogger import jsonlogger
