@@ -7,6 +7,10 @@ from datetime import datetime, timezone
 import boto3
 import psycopg2
 from botocore.exceptions import ClientError
+from confluent_kafka import Consumer as ConfluentConsumer
+from confluent_kafka.schema_registry import SchemaRegistryClient
+from confluent_kafka.schema_registry.avro import AvroDeserializer
+from confluent_kafka.serialization import MessageField, SerializationContext
 from dotenv import load_dotenv
 from kafka import KafkaConsumer, KafkaProducer, TopicPartition
 from kafka.errors import KafkaError
@@ -29,6 +33,7 @@ TIMESCALE_PORT = int(os.getenv("TIMESCALE_PORT", "5432"))
 TIMESCALE_USER = os.getenv("TIMESCALE_USER", "weatheruser")
 TIMESCALE_PASSWORD = os.getenv("TIMESCALE_PASSWORD", "weatherpass")
 TIMESCALE_DB = os.getenv("TIMESCALE_DB", "weather")
+SCHEMA_REGISTRY_URL = os.getenv("SCHEMA_REGISTRY_URL", "http://schema-registry:8081")
 
 start_http_server(CONSUMER_PORT)
 
@@ -53,20 +58,23 @@ TIMESCALE_ERRORS = Counter("consumer_timescale_errors_total", "Failed TimescaleD
 def create_consumer():
     while True:
         try:
-            consumer = KafkaConsumer(
-                TOPIC,
-                bootstrap_servers=KAFKA_BROKERS,
-                auto_offset_reset="earliest",
-                enable_auto_commit=True,
-                group_id=GROUP_ID,
-                value_deserializer=lambda x: json.loads(x.decode("utf-8")),
+            schema_registry_client = SchemaRegistryClient({"url": SCHEMA_REGISTRY_URL})
+            avro_deserializer = AvroDeserializer(schema_registry_client)
+
+            consumer = ConfluentConsumer(
+                {
+                    "bootstrap.servers": KAFKA_BROKERS,
+                    "group.id": GROUP_ID,
+                    "auto.offset.reset": "earliest",
+                    "enable.auto.commit": True,
+                }
             )
+            consumer.subscribe([TOPIC])
             logger.info("Kafka consumer connected")
-            return consumer
-        except KafkaError as e:
+            return consumer, avro_deserializer
+        except Exception as e:
             logger.warning("Kafka not ready, retrying in 5s", extra={"error": str(e)})
             time.sleep(5)
-
 
 def create_dlq_producer():
     while True:
@@ -102,15 +110,13 @@ def send_to_dlq(dlq_producer, message, error):
 
 def update_lag(consumer):
     try:
-        partitions = consumer.partitions_for_topic(TOPIC)
-        if partitions is None:
-            return
-        for p in partitions:
-            tp = TopicPartition(TOPIC, p)
-            end_offsets = consumer.end_offsets([tp])
-            current_offset = consumer.position(tp)
-            lag = end_offsets[tp] - current_offset
-            CONSUMER_LAG.labels(topic=TOPIC, partition=p).set(lag)
+        assignment = consumer.assignment()
+        for tp in assignment:
+            low, high = consumer.get_watermark_offsets(tp, timeout=1.0)
+            position = consumer.position([tp])
+            if position:
+                lag = high - position[0].offset
+                CONSUMER_LAG.labels(topic=tp.topic, partition=tp.partition).set(lag)
     except Exception as e:
         logger.error("Lag calculation error", extra={"error": str(e)})
 
@@ -240,24 +246,51 @@ def write_to_timescale(conn, message):
 
 
 def main():
-    consumer = create_consumer()
+    consumer, avro_deserializer = create_consumer()
     dlq_producer = create_dlq_producer()
     minio_client = create_minio_client()
     ensure_bucket(minio_client)
     timescale_conn = create_timescale_conn()
     logger.info("Waiting for messages")
 
-    for message in consumer:
+    while True:
+        msg = consumer.poll(timeout=1.0)
+        if msg is None:
+            continue
+        if msg.error():
+            logger.error("Consumer error", extra={"error": str(msg.error())})
+            continue
         try:
-            process_message(message)
+            message_value = avro_deserializer(
+                msg.value(),
+                SerializationContext(TOPIC, MessageField.VALUE),
+            )
+
+            class MessageWrapper:
+                def __init__(self, value, topic, partition, offset, timestamp):
+                    self.value = value
+                    self.topic = topic
+                    self.partition = partition
+                    self.offset = offset
+                    self.timestamp = timestamp[1] if timestamp else None
+
+            wrapped = MessageWrapper(
+                value=message_value,
+                topic=msg.topic(),
+                partition=msg.partition(),
+                offset=msg.offset(),
+                timestamp=msg.timestamp(),
+            )
+
+            process_message(wrapped)
             MESSAGES_CONSUMED.inc()
             update_lag(consumer)
-            write_to_minio(minio_client, message)
-            write_to_timescale(timescale_conn, message)
+            write_to_minio(minio_client, wrapped)
+            write_to_timescale(timescale_conn, wrapped)
         except Exception as e:
             CONSUMER_ERRORS.inc()
             logger.error("Error processing message", extra={"error": str(e)})
-            send_to_dlq(dlq_producer, message, e)
+            send_to_dlq(dlq_producer, msg, e)
 
 
 if __name__ == "__main__":

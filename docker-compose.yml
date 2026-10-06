@@ -76,6 +76,7 @@ services:
       TIMESCALE_USER: "${TIMESCALE_USER}"
       TIMESCALE_PASSWORD: "${TIMESCALE_PASSWORD}"
       TIMESCALE_DB: "${TIMESCALE_DB}"
+      SCHEMA_REGISTRY_URL: "${SCHEMA_REGISTRY_URL}"
     restart: on-failure
 
   kafka-ui:
