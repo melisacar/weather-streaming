@@ -58,36 +58,30 @@ def test_fetch_weather_data_timeout_raises():
 
 
 def test_send_message_success():
-    # mock producer and future — message should be sent and counter incremented
     mock_producer = MagicMock()
-    mock_future = MagicMock()
-    mock_producer.send.return_value = mock_future
+    mock_avro_serializer = MagicMock(return_value=b"avro_bytes")
 
     message = FAKE_PERIODS[0]
-    send_message(mock_producer, message)
+    send_message(mock_producer, mock_avro_serializer, message)
 
-    mock_producer.send.assert_called_once_with(TOPIC, message)
-    mock_future.get.assert_called_once_with(timeout=10)
+    mock_producer.produce.assert_called_once()
+    mock_producer.flush.assert_called_once()
 
 
 def test_send_message_kafka_error_does_not_raise():
-    # when Kafka send fails, function should handle it gracefully
-    from kafka.errors import KafkaError
-
     mock_producer = MagicMock()
-    mock_producer.send.side_effect = KafkaError("broker unavailable")
+    mock_avro_serializer = MagicMock(return_value=b"avro_bytes")
+    mock_producer.produce.side_effect = Exception("broker unavailable")
 
     message = FAKE_PERIODS[0]
-    # should not raise, just log the error
-    send_message(mock_producer, message)
+    send_message(mock_producer, mock_avro_serializer, message)
 
 
 def test_send_message_invalid_schema_skips_kafka():
-    # message failing validation should not be sent to Kafka
     mock_producer = MagicMock()
+    mock_avro_serializer = MagicMock()
+    invalid_message = {"name": "Today"}
 
-    invalid_message = {"name": "Today"}  # missing required fields
+    send_message(mock_producer, mock_avro_serializer, invalid_message)
 
-    send_message(mock_producer, invalid_message)
-
-    mock_producer.send.assert_not_called()
+    mock_producer.produce.assert_not_called()

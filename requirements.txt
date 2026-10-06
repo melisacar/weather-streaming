@@ -13,3 +13,8 @@ great-expectations
 sqlalchemy
 confluent-kafka[avro]
 fastavro
+authlib
+httpx
+cachetools
+scikit-learn
+pandas

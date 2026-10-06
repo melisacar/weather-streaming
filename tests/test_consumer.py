@@ -79,18 +79,14 @@ def test_send_to_dlq_handles_kafka_error():
 
 
 def test_update_lag_sets_gauge():
-    # update_lag should calculate lag and set gauge metric
+    from confluent_kafka import TopicPartition
     mock_consumer = MagicMock()
-    mock_consumer.partitions_for_topic.return_value = {0}
-
-    from kafka import TopicPartition
-
     tp = TopicPartition("weather-data", 0)
-    mock_consumer.end_offsets.return_value = {tp: 100}
-    mock_consumer.position.return_value = 90
+    mock_consumer.assignment.return_value = [tp]
+    mock_consumer.get_watermark_offsets.return_value = (0, 100)
+    mock_consumer.position.return_value = [TopicPartition("weather-data", 0, 90)]
 
     from src.consumer.consumer import CONSUMER_LAG
-
     update_lag(mock_consumer)
 
     assert CONSUMER_LAG.labels(topic="weather-data", partition=0)._value.get() == 10
