@@ -55,3 +55,4 @@ logs/
 Thumbs.db
 
 spark-*.tgz
+k8s/secrets.yml
