@@ -1,0 +1,97 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: consumer
+  namespace: weather-streaming
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: consumer
+  template:
+    metadata:
+      labels:
+        app: consumer
+    spec:
+      containers:
+      - name: consumer
+        image: weather-consumer:latest
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 8001
+        env:
+        - name: KAFKA_BROKERS
+          valueFrom:
+            configMapKeyRef:
+              name: weather-config
+              key: KAFKA_BROKERS
+        - name: KAFKA_TOPIC
+          valueFrom:
+            configMapKeyRef:
+              name: weather-config
+              key: KAFKA_TOPIC
+        - name: GROUP_ID
+          valueFrom:
+            configMapKeyRef:
+              name: weather-config
+              key: GROUP_ID
+        - name: CONSUMER_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: weather-config
+              key: CONSUMER_PORT
+        - name: DLQ_TOPIC
+          valueFrom:
+            configMapKeyRef:
+              name: weather-config
+              key: DLQ_TOPIC
+        - name: MINIO_ENDPOINT
+          valueFrom:
+            configMapKeyRef:
+              name: weather-config
+              key: MINIO_ENDPOINT
+        - name: MINIO_BUCKET
+          valueFrom:
+            configMapKeyRef:
+              name: weather-config
+              key: MINIO_BUCKET
+        - name: MINIO_ROOT_USER
+          valueFrom:
+            secretKeyRef:
+              name: weather-secrets
+              key: MINIO_ROOT_USER
+        - name: MINIO_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: weather-secrets
+              key: MINIO_ROOT_PASSWORD
+        - name: TIMESCALE_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: weather-config
+              key: TIMESCALE_HOST
+        - name: TIMESCALE_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: weather-config
+              key: TIMESCALE_PORT
+        - name: TIMESCALE_USER
+          valueFrom:
+            secretKeyRef:
+              name: weather-secrets
+              key: TIMESCALE_USER
+        - name: TIMESCALE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: weather-secrets
+              key: TIMESCALE_PASSWORD
+        - name: TIMESCALE_DB
+          valueFrom:
+            configMapKeyRef:
+              name: weather-config
+              key: TIMESCALE_DB
+        - name: SCHEMA_REGISTRY_URL
+          valueFrom:
+            configMapKeyRef:
+              name: weather-config
+              key: SCHEMA_REGISTRY_URL

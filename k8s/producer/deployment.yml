@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: producer
+  namespace: weather-streaming
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: producer
+  template:
+    metadata:
+      labels:
+        app: producer
+    spec:
+      containers:
+      - name: producer
+        image: weather-producer:latest
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 8000
+        env:
+        - name: KAFKA_BROKERS
+          valueFrom:
+            configMapKeyRef:
+              name: weather-config
+              key: KAFKA_BROKERS
+        - name: KAFKA_TOPIC
+          valueFrom:
+            configMapKeyRef:
+              name: weather-config
+              key: KAFKA_TOPIC
+        - name: PRODUCER_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: weather-config
+              key: PRODUCER_PORT
+        - name: WEATHER_API_URL
+          valueFrom:
+            configMapKeyRef:
+              name: weather-config
+              key: WEATHER_API_URL
+        - name: WEATHER_API_USER_AGENT
+          valueFrom:
+            configMapKeyRef:
+              name: weather-config
+              key: WEATHER_API_USER_AGENT
+        - name: SCHEMA_REGISTRY_URL
+          valueFrom:
+            configMapKeyRef:
+              name: weather-config
+              key: SCHEMA_REGISTRY_URL
