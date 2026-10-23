@@ -1,10 +1,8 @@
 # weather-streaming
 
-A production-grade real-time data streaming pipeline that ingests weather forecast data from the [National Weather Service API](https://weather.gov), publishes it to Apache Kafka, stores raw data in MinIO, persists structured data in TimescaleDB, and exposes full observability through Prometheus and Grafana. Built to demonstrate professional data engineering patterns including event-driven architecture, wind energy production forecasting, containerized microservices, and metrics-driven monitoring.
+A streaming pipeline that ingests weather forecast data from the [National Weather Service API](https://weather.gov) (polled every 5 minutes), publishes it to Apache Kafka, stores raw data in MinIO, persists structured data in TimescaleDB, and exposes full observability through Prometheus and Grafana. Built to demonstrate professional data engineering patterns including event-driven architecture, wind energy production forecasting, containerized microservices, and metrics-driven monitoring.
 
 ---
-
-## Architecture
 
 ## Architecture
 
@@ -41,7 +39,7 @@ A production-grade real-time data streaming pipeline that ingests weather foreca
 | Config | python-dotenv | Environment-based configuration |
 | Testing | pytest + pytest-mock | 38 unit tests |
 | CI | GitHub Actions | Lint (ruff) + test on every push |
-| Orchestration | Docker Compose | Local multi-container setup |
+| Orchestration | Docker Compose, Kubernetes (Minikube) | Local multi-container setup and K8s manifests |
 
 ---
 
@@ -78,6 +76,11 @@ weather-streaming/
     test_producer.py       # unit tests for producer
     test_consumer.py       # unit tests for consumer (MinIO, TimescaleDB, DLQ)
     test_schema.py         # unit tests for JSON schema validation
+  k8s/
+    namespace.yml, configmap.yml, secrets.example.yml
+    kafka/ minio/ timescaledb/ schema-registry/ producer/ consumer/
+  docs/
+    architecture.png
   Dockerfile               # producer container image
   Dockerfile.consumer      # consumer container image
   Dockerfile.spark         # PySpark job container image
@@ -114,7 +117,7 @@ Confluent Schema Registry stores and versions Avro schemas. Producer registers t
 The pipeline evaluates weather forecast data for wind turbine suitability:
 - **Wind Power Index** — estimated power output using `P = 0.5 × ρ × A × v³`
 - **Suitability Score** — 0-100 score based on wind speed range (optimal: 7-55 mph)
-- Beverly Hills, CA (current location) consistently scores 0 — demonstrating the pipeline correctly identifies unsuitable turbine sites
+- Beverly Hills, CA (current location) mostly scores low (0–30) — demonstrating the pipeline correctly identifies marginal turbine sites
 
 > Wind energy assessment using forecast data combines numerical weather predictions with machine learning models to estimate future power generation and optimize grid integration. In production, this pipeline would be extended with historical reanalysis datasets (ERA5, MERRA-2), real-time SCADA feeds, and ML models for power curve optimization.
 
@@ -212,7 +215,14 @@ docker compose up --build
 docker compose ps
 ```
 
-All 10 services should be up: kafka, weather-production, weather-consumer, kafka-ui, prometheus, grafana, node-exporter, cadvisor, minio, timescaledb.
+All 12 services should be up: kafka, schema-registry, weather-production, weather-consumer, kafka-ui, prometheus, grafana, node-exporter, cadvisor, minio, timescaledb, superset.
+
+5. Initialize Superset (first run only)
+```
+docker exec superset superset db upgrade
+docker exec superset superset init
+docker exec superset superset fab create-admin --username admin --firstname Admin --lastname Admin --email admin@admin.com --password admin
+```
 
 ---
 
@@ -230,6 +240,7 @@ All 10 services should be up: kafka, weather-production, weather-consumer, kafka
 | Consumer metrics | http://localhost:8001/metrics | — |
 | cAdvisor | http://localhost:8085 | — |
 | Node Exporter | http://localhost:9100/metrics | — |
+
 ---
 
 ## Data Source
@@ -302,6 +313,7 @@ See `.env.example` for the full list. Key variables:
 | WEATHER_API_URL | NWS forecast endpoint | LOX/150,48 |
 | MINIO_ENDPOINT | MinIO API endpoint | minio:9000 |
 | MINIO_BUCKET | MinIO bucket name | weather-raw |
+| SCHEMA_REGISTRY_URL | Schema Registry endpoint | http://schema-registry:8081 |
 | TIMESCALE_HOST | TimescaleDB host | timescaledb |
 | TIMESCALE_DB | Database name | weather |
 
@@ -335,7 +347,6 @@ pytest
 - [x] Error handling — API timeout, Kafka broker unavailable
 - [x] Retry mechanism with exponential backoff (tenacity)
 - [x] Dead Letter Queue (DLQ) for failed messages
-- [x] Idempotent producer configuration
 - [x] JSON Schema validation for message format
 - [x] MinIO as S3-compatible data lake (raw message storage)
 - [x] TimescaleDB for time-series weather data storage
@@ -346,13 +357,14 @@ pytest
 - [x] PySpark batch aggregation — hourly wind energy metrics from MinIO to TimescaleDB
 - [x] Apache Superset for wind energy business dashboard
 - [x] Avro schema + Confluent Schema Registry
-- [x] Great Expectations — data quality checks on TimescaleDB and Spark output
+- [x] Great Expectations — data quality checks on the weather_forecasts table
 - [x] Anomaly detection — ML-based wind speed anomaly flagging
+- [x] Kubernetes manifests (Minikube) for the core pipeline
 
 ### Planned
 
+- [ ] Helm chart
 - [ ] GitHub Actions CD pipeline (build + deploy)
-- [ ] Kubernetes deployment (Helm charts)
 - [ ] Terraform for infrastructure management
 
 ---
@@ -367,11 +379,7 @@ pytest
 - Schema Registry requires Kafka to be healthy before starting — a healthcheck is configured on the Kafka service
 - Confluent Schema Registry runs in KRaft combined mode for local development. In production, use Confluent Cloud or isolated KRaft mode
 - Spark binary must be downloaded manually before building the spark-job image — download `spark-3.5.1-bin-hadoop3.tgz` from https://archive.apache.org/dist/spark/spark-3.5.1/ and place it in the project root. In production this would run on AWS EMR or Databricks
-- Python 3.12+ requires `kafka-python-ng` instead of `kafka-python`. Docker uses Python 3.9 so `requirements.txt` stays as-is. For local test runs:
-```
-pip uninstall kafka-python -y
-pip install kafka-python-ng
-```
+- Python 3.12+ requires `kafka-python-ng` (already in `requirements.txt`) instead of `kafka-python`.
 - To generate a fresh Kafka Cluster ID:
 ```
 python -c "import uuid, base64; print(base64.b64encode(uuid.uuid4().bytes).decode())"
