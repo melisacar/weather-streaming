@@ -105,7 +105,7 @@ Reads Avro-encoded messages from the `weather-data` Kafka topic. For each messag
 - Writes raw JSON to MinIO under `raw/YYYY/MM/DD/HH/partition-offset.json`
 - Calculates wind power index and turbine suitability score
 - Writes structured data to TimescaleDB
-- Sends failed messages to `weather-data.dlq`
+- Messages that fail deserialization or processing go to `weather-data.dlq`
 - Exposes Prometheus metrics on port 8001
 
 All logs are structured JSON via `python-json-logger`.
@@ -374,7 +374,8 @@ pytest
 - Kafka runs in KRaft mode — no Zookeeper container needed
 - Topics auto-created on producer startup via `setup/topics.py`
 - Grafana dashboard and datasource provisioned automatically — `docker compose down -v` safe
-- Weather.gov API is free, no rate limits documented, no API key required
+- Weather.gov API is fre
+e, no rate limits documented, no API key required
 - MinIO is S3-compatible — switch to AWS S3 by changing `MINIO_ENDPOINT` in `.env`
 - Schema Registry requires Kafka to be healthy before starting — a healthcheck is configured on the Kafka service
 - Confluent Schema Registry runs in KRaft combined mode for local development. In production, use Confluent Cloud or isolated KRaft mode
