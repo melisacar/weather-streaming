@@ -240,10 +240,22 @@ def write_to_timescale(conn, message):
             },
         )
     except Exception as e:
-        conn.rollback()
+        try:
+            conn.rollback()
+        except psycopg2.Error:
+            # connection is dead, main() reconnects on the next message
+            pass
         TIMESCALE_ERRORS.inc()
         logger.error("TimescaleDB write error", extra={"error": str(e)})
 
+class MessageWrapper:
+    def __init__(self, value, topic, partition, offset, timestamp):
+        self.value = value
+        self.topic = topic
+        self.partition = partition
+        self.offset = offset
+        # confluent-kafka returns (timestamp_type, timestamp)
+        self.timestamp = timestamp[1] if timestamp else None
 
 def main():
     consumer, avro_deserializer = create_consumer()
@@ -260,37 +272,31 @@ def main():
         if msg.error():
             logger.error("Consumer error", extra={"error": str(msg.error())})
             continue
+
+        # build the wrapper first so the DLQ always gets a JSON-serializable message
+        raw = msg.value()
+        wrapped = MessageWrapper(
+            value=raw.decode("utf-8", errors="replace") if raw else None,
+            topic=msg.topic(),
+            partition=msg.partition(),
+            offset=msg.offset(),
+            timestamp=msg.timestamp(),
+        )
         try:
-            message_value = avro_deserializer(
-                msg.value(),
-                SerializationContext(TOPIC, MessageField.VALUE),
+            wrapped.value = avro_deserializer(
+                raw, SerializationContext(TOPIC, MessageField.VALUE)
             )
-
-            class MessageWrapper:
-                def __init__(self, value, topic, partition, offset, timestamp):
-                    self.value = value
-                    self.topic = topic
-                    self.partition = partition
-                    self.offset = offset
-                    self.timestamp = timestamp[1] if timestamp else None
-
-            wrapped = MessageWrapper(
-                value=message_value,
-                topic=msg.topic(),
-                partition=msg.partition(),
-                offset=msg.offset(),
-                timestamp=msg.timestamp(),
-            )
-
             process_message(wrapped)
             MESSAGES_CONSUMED.inc()
             update_lag(consumer)
             write_to_minio(minio_client, wrapped)
+            if timescale_conn.closed:
+                timescale_conn = create_timescale_conn()
             write_to_timescale(timescale_conn, wrapped)
         except Exception as e:
             CONSUMER_ERRORS.inc()
             logger.error("Error processing message", extra={"error": str(e)})
-            send_to_dlq(dlq_producer, msg, e)
+            send_to_dlq(dlq_producer, wrapped, e)
 
 
 if __name__ == "__main__":
