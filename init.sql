@@ -16,8 +16,8 @@ CREATE TABLE IF NOT EXISTS weather_forecasts (
 
 SELECT create_hypertable('weather_forecasts', 'time', if_not_exists => TRUE);
 
-CREATE INDEX IF NOT EXISTS idx_weather_forecasts_time
-    ON weather_forecasts (time DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_weather_forecasts_time_name
+    ON weather_forecasts (time, name);
 
 
 CREATE TABLE IF NOT EXISTS weather_hourly_aggregates (

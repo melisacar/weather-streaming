@@ -207,12 +207,22 @@ def write_to_timescale(conn, message):
     try:
         with conn.cursor() as cur:
             cur.execute(
-                """
+                 """
                 INSERT INTO weather_forecasts
                     (time, name, temperature, temperature_unit,
                      wind_speed, wind_direction, short_forecast, is_daytime,
                      wind_speed_mph, wind_power_index, suitability_score)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (time, name) DO UPDATE SET
+                    temperature = EXCLUDED.temperature,
+                    temperature_unit = EXCLUDED.temperature_unit,
+                    wind_speed = EXCLUDED.wind_speed,
+                    wind_direction = EXCLUDED.wind_direction,
+                    short_forecast = EXCLUDED.short_forecast,
+                    is_daytime = EXCLUDED.is_daytime,
+                    wind_speed_mph = EXCLUDED.wind_speed_mph,
+                    wind_power_index = EXCLUDED.wind_power_index,
+                    suitability_score = EXCLUDED.suitability_score
                 """,
                 (
                     data.get("startTime"),
