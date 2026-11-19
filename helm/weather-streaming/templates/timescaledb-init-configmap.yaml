@@ -1,0 +1,20 @@
+apiVersion: v1
+data:
+  init.sql: "CREATE EXTENSION IF NOT EXISTS timescaledb;\r\n\r\nCREATE TABLE IF NOT
+    EXISTS weather_forecasts (\r\n    time             TIMESTAMPTZ NOT NULL,\r\n    name
+    \            TEXT,\r\n    temperature      INTEGER,\r\n    temperature_unit VARCHAR(5),\r\n
+    \   wind_speed       TEXT,\r\n    wind_direction   VARCHAR(5),\r\n    short_forecast
+    \  TEXT,\r\n    is_daytime       BOOLEAN,\r\n    wind_speed_mph   FLOAT,\r\n    wind_power_index
+    FLOAT,\r\n    suitability_score INTEGER\r\n);\r\n\r\nSELECT create_hypertable('weather_forecasts',
+    'time', if_not_exists => TRUE);\r\n\r\nCREATE INDEX IF NOT EXISTS idx_weather_forecasts_time\r\n
+    \   ON weather_forecasts (time DESC);\r\n\r\n\r\nCREATE TABLE IF NOT EXISTS weather_hourly_aggregates
+    (\r\n    hour                TIMESTAMPTZ NOT NULL,\r\n    avg_wind_speed_mph  FLOAT,\r\n
+    \   max_wind_speed_mph  FLOAT,\r\n    avg_temperature     FLOAT,\r\n    record_count
+    \       INTEGER\r\n);\r\n\r\nSELECT create_hypertable('weather_hourly_aggregates',
+    'hour', if_not_exists => TRUE);\r\n\r\nCREATE INDEX IF NOT EXISTS idx_hourly_aggregates_hour\r\n
+    \   ON weather_hourly_aggregates (hour DESC);"
+kind: ConfigMap
+metadata:
+  creationTimestamp: null
+  name: timescale-init
+  namespace: {{ .Values.namespace }}

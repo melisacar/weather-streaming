@@ -1,0 +1,13 @@
+namespace: weather-streaming
+
+images:
+  kafka: confluentinc/cp-kafka:7.6.0
+  minio: minio/minio:latest
+  timescaledb: timescale/timescaledb:latest-pg16
+  schemaRegistry: confluentinc/cp-schema-registry:7.6.0
+  producer: weather-producer:latest
+  consumer: weather-consumer:latest
+
+replicas:
+  producer: 1
+  consumer: 1
