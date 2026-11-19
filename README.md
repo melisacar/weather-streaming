@@ -360,10 +360,10 @@ pytest
 - [x] Great Expectations — data quality checks on the weather_forecasts table
 - [x] Anomaly detection — ML-based wind speed anomaly flagging
 - [x] Kubernetes manifests (Minikube) for the core pipeline
+- [ ] Helm chart
 
 ### Planned
 
-- [ ] Helm chart
 - [ ] GitHub Actions CD pipeline (build + deploy)
 - [ ] Terraform for infrastructure management
 
