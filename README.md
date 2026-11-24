@@ -360,7 +360,7 @@ pytest
 - [x] Great Expectations — data quality checks on the weather_forecasts table
 - [x] Anomaly detection — ML-based wind speed anomaly flagging
 - [x] Kubernetes manifests (Minikube) for the core pipeline
-- [ ] Helm chart
+- [x] Helm chart
 
 ### Planned
 
